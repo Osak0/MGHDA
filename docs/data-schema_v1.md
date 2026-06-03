@@ -124,7 +124,7 @@ Answer construction:
 
 - if statement matches true binding -> `Yes`
 - if statement contradicts true binding -> `No`
--if true binding is ambiguous -> exclude or manual review
+- if true binding is ambiguous -> exclude or manual review
 
 ### G3b modifier questions
 
@@ -241,7 +241,7 @@ Purpose: normalize RadGraph entities and relations into report-side clinical ass
 
 Model-ready items are constructed from intermediate tables according to `granularity-mapping.md`.
 
-Intermediate tables are **not** directly used as model input. They are normalized evidence tables produced after parsing raw datasets. Model-ready items are the actual image-question-answer records used for model inference and evaluation.
+Intermediate tables are not directly used as model input. They are normalized evidence tables produced after parsing raw datasets. Model-ready items are the actual image-question-answer records used for model inference and evaluation.
 
 Each item corresponds to one image-question-answer instance.
 
@@ -249,7 +249,7 @@ Recommended file path:
 
 ```text
 data/processed/items/{granularity}_items.jsonl
-````
+```
 
 Example files:
 
