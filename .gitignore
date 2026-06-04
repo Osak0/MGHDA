@@ -1,25 +1,35 @@
 # =====================
-# General
+# Restricted or generated medical data
 # =====================
-AGENTS.md
+data/raw/
+data/interim/
+data/processed/
+data/pilot/
+
+# Keep synthetic public fixtures available for tests.
+!data/fixtures/
+!data/fixtures/**
 
 # =====================
-# Python
-# =====================
-__pycache__/
-
-# =====================
-# Data
-# =====================
-data/
-
-# =====================
-# Outputs
+# Experiment outputs
 # =====================
 outputs/
 logs/
 
 # =====================
-# Environments
+# Local environments and caches
 # =====================
 .env
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# =====================
+# Local machine files
+# =====================
+.DS_Store
+Thumbs.db
