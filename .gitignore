@@ -1,10 +1,7 @@
 # =====================
 # Restricted or generated medical data
 # =====================
-data/raw/
-data/interim/
-data/processed/
-data/pilot/
+data/
 
 # Keep synthetic public fixtures available for tests.
 !data/fixtures/
