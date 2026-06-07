@@ -2,3 +2,4 @@ pyarrow
 transformers
 pillow
 accelerate
+matplotlib
