@@ -1,1 +1,4 @@
 pyarrow
+transformers
+pillow
+accelerate
