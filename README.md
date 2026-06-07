@@ -41,3 +41,10 @@ Training, LoRA, SFT, and DPO are reserved for later stages. They should only be
 considered after data parsing, schema audit, and pilot inference evaluation are
 stable.
 
+## pilot experiment
+torch: 2.5.1+cu121
+cuda: True
+torch cuda: 12.1
+transformers: 4.50.3
+accelerate: 1.13.0
+pillow ok
