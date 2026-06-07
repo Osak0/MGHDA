@@ -32,19 +32,34 @@ example
 #### question template (G1)
 
 addition: For G1, we use the `attributes` lists from Chest ImaGenome attribute dictionaries, regardless of whether `bbox_name` is valid or False, because G1 only requires image-level finding existence or absence and does not require anatomy-specific localization.
-
+for h1:
 Is there evidence of {finding} in this chest X-ray?
+Answer only one of: Yes, No, or Uncertain.
+
+for h2:
+Is the following claim supported by the chest X-ray?
+Claim: There is evidence of {finding}./There isn't evidence of {finding}.
+Answer only one of: Supported, Unsupported, or Uncertain.
 
 #### Construction rule (G1)
 
-- Yes: at least one relevant anatomical region has `{category}|yes|{finding}`.
-- No: no positive evidence conflicts with it, has `{category}|no|{finding}`.
-- Unknown: `{finding}` is not mentioned or evidence is incomplete.
+For h1: All anatomicalfinding from all attributes in this image.
+
+- Yes: at least one relevant anatomical region has `{anatomicalfinding}|yes|{finding}`.
+- No: no positive evidence conflicts with it, has `{anatomicalfinding}|no|{finding}`.
+- Uncertain: The model cannot make a judgment. Use as abstention.
 - Conflict: both positive and negative assertions exist for the same finding; exclude from the first pilot or send to manual review.
+
+For h2:
+
+- Supported: The anatomicalfinding has been mentioned in this image. 'anatomicalfinding|yes|...' for There is evidence of {finding}. 'anatomicalfinding|no|...' for There isn't evidence of {finding}.
+- Unsupported: The anatomicalfinding hasn't been mentioned in this image. We can't judge.
+- Uncertain: The model can't make a judgement. Use as abstention.
+- Pilot sampling: H2 uses a configurable Unsupported/Supported balance. The first pilot default is 80% Unsupported and 20% Supported, but this is an experimental setting, not a claim that 8/2 is optimal.
 
 #### example (G1)
 
-##### Positive G1
+##### Positive h1 G1
 
 Source assertion:
 `right lower lung zone: anatomicalfinding|yes|lung opacity`
@@ -55,7 +70,7 @@ Constructed item:
     - Answer: Yes
     - Evidence: At least one anatomical region has `lung opacity=yes`.
 
-##### Negative G1
+##### Negative h1 G1
 
 Source assertion:
 `right lung: anatomicalfinding|no|pneumothorax`
@@ -65,7 +80,27 @@ Constructed item:
     - Question: Is there evidence of pneumothorax in this chest X-ray?
     - Answer: No
     - Evidence: Explicit negative pneumothorax assertion and no positive pneumothorax assertion.
-  
+
+#### Statistical indicators G1
+
+n_total = total items
+n_abstain = model outputs Uncertain
+n_invalid = invalid responses
+n_answered = n_total - n_abstain - n_invalid
+
+coverage = n_answered / n_total
+abstention_rate = n_abstain / n_total
+answered_accuracy = correct / n_answered
+
+H1_false_positive_count = count(answer_label = No and parsed_answer = Yes)
+
+H1_false_negative_count = count(answer_label = Yes and parsed_answer = No)
+
+H1_count = H1_false_positive_count + H1_false_negative_count
+
+H1_rate_total = H1_count / n_total
+H1_rate_answered = H1_count / n_answered
+
 ---
 
 ### G2 (Chest ImaGenome)
@@ -100,18 +135,28 @@ example (attributes list):
 
 #### question template (G2)
 
-- Is there {attributes{findings}} in the {bbox_name} ?
+For h1:
+
+- Is there {attributes{findings}} in the {bbox_name} ? Answer only one of: Yes, No, or Uncertain.
 - Where is the {findings} located? A... B... C... D... E.no evidence of the {...}
 - as model could complete bbox grounding task: extension question for (x1, x2, y1, y2)
+
+For h2:
+
+Is the following claim supported by the chest X-ray?
+Claim: There is evidence of {finding} in the {bbox_name}./There isn't evidence of {finding} in the {bbox_name}.
+Answer only one of: Supported, Unsupported, or Uncertain.
 
 #### construction rule (G2)
 
 addition:the key of the first line in attribute dictionary that refers to anatomy name, such as'right lung', need to be True, because False means anatomical location may not always be described or implied in the report, but in G2, we need to focus on the anatomical location level, so the anatomy should be bound to the attribute dictionary.
 
+For h1:
+
 For G2-main yes/no QA
     - Yes: the target anatomy has `{category}|yes|{finding}`.
     - No: the target anatomy has explicit `{category}|no|{finding}` and no conflicting positive assertion for the same anatomy-finding pair.
-    - Unknown: the target anatomy is absent, the finding is not mentioned for that anatomy, or the evidence is incomplete.
+    - Uncertain: The model cannot make a judgment. Use as abstention.
     - Conflict: the same anatomy-finding pair has both positive and negative evidence; exclude from pilot or mark for manual review.
 
 For G2-choice:
@@ -123,6 +168,13 @@ For G2-box:
     - Use only as an optional grounding probe.
     - Use `original_x1`, `original_y1`, `original_x2`, `original_y2` as the reference bbox when evaluating on original MIMIC-CXR-JPG images.
     - Treat this as anatomical-region localization, not lesion segmentation.
+
+For h2:
+
+- Supported: The anatomicalfinding has been mentioned in this attribute. 'anatomicalfinding|yes|...' for There is evidence of {finding} in the {bbox_name}. 'anatomicalfinding|no|...' for There isn't evidence of {finding} in the {bbox_name}.
+- Unsupported: The anatomicalfinding hasn't been mentioned in this attribute. We can't judge.
+- Uncertain: The model can't make a judgement. Use as abstention.
+- Pilot sampling: H2 uses a configurable Unsupported/Supported balance. The first pilot default is 80% Unsupported and 20% Supported, but this is an experimental setting, not a claim that 8/2 is optimal.
 
 #### examples (G2 — anatomical localization)
 
@@ -166,6 +218,22 @@ Evaluation:
     - IoU with anatomical bbox;
     - or center point inside reference bbox;
     - not used as main G2 hallucination metric.
+
+#### Statistical indicators G2
+
+n_total = total items
+n_abstain = model outputs Uncertain
+n_invalid = invalid responses
+n_answered = n_total - n_abstain - n_invalid
+
+coverage = n_answered / n_total
+abstention_rate = n_abstain / n_total
+answered_accuracy = correct / n_answered
+
+H2_count = count(answer_label = Unsupported and parsed_answer = Supported)
+
+H2_rate_total = H2_count / n_total
+H2_rate_answered = H2_count / n_answered
 
 ---
 

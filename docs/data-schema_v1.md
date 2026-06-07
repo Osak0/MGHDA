@@ -248,14 +248,16 @@ Each item corresponds to one image-question-answer instance.
 Recommended file path:
 
 ```text
-data/processed/items/{granularity}_items.jsonl
+data/processed/items/{granularity}_{hallucination_probe}_items.jsonl
 ```
 
 Example files:
 
 ```text
-data/processed/items/g1_items.jsonl
-data/processed/items/g2_items.jsonl
+data/processed/items/g1_h1_items.jsonl
+data/processed/items/g1_h2_items.jsonl
+data/processed/items/g2_h1_items.jsonl
+data/processed/items/g2_h2_items.jsonl
 data/processed/items/g3a_items.jsonl
 data/processed/items/g3b_items.jsonl
 data/processed/items/g4_proxy_items.jsonl
@@ -273,6 +275,7 @@ data/processed/items/g4_proxy_items.jsonl
 | `image_path` | string/null | Local path to the MIMIC-CXR-JPG image used as model input. |
 | `granularity` | string | Clinical-semantic granularity level. |
 | `question_type` | string | Type of question or experimental probe. |
+| `hallucination_probe` | string/null | `H1`, `H2`, or null for non-probe items. |
 | `question` | string | Model-facing question. |
 | `answer_label` | string/null | Constructed ground-truth answer. |
 | `target_finding` | string/null | Target radiological finding, such as `pneumothorax`. |
@@ -309,6 +312,8 @@ For closed QA:
 Yes
 No
 Uncertain
+Supported
+Unsupported
 A
 B
 C
@@ -375,6 +380,45 @@ For G4 structured synthesis proxy, `answer_label` can be `null`, and the item sh
 
 ## Model Output Schema
 
+## Prompt Layer Schema
+
+Prompts are split into two JSONL layers so true model inputs do not contain
+ground-truth labels.
+
+Model input file:
+
+```text
+data/processed/prompts/{split}_model_inputs.jsonl
+```
+
+Required fields:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `item_id` | string | Item ID used to join back to metadata. |
+| `image_path` | string | Local image path used by the model runner. |
+| `prompt_template_id` | string | Prompt template ID. |
+| `prompt` | string | Full text prompt sent to the model. |
+
+Evaluation metadata file:
+
+```text
+data/processed/prompts/{split}_eval_metadata.jsonl
+```
+
+Required fields:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `item_id` | string | Item ID used to join to model output. |
+| `answer_label` | string/null | Ground-truth answer for scoring. |
+| `granularity` | string | Granularity level. |
+| `question_type` | string | Question type or experimental probe. |
+| `hallucination_probe` | string/null | `H1`, `H2`, or null. |
+| `target_finding` | string/null | Target finding. |
+| `target_anatomy` | string/null | Target anatomy. |
+| `evidence_sources` | list[string] | Evidence source types. |
+
 Model outputs should be saved separately from model-ready items.
 
 The purpose of this schema is to preserve the raw model response, the parsed answer, and the generation configuration. This makes debugging, re-parsing, and manual review possible.
@@ -396,7 +440,7 @@ outputs/raw_responses/{model_name}_{split}.jsonl
 | `prompt_template_id` | string/null | Prompt template ID.                                   |
 | `prompt`             | string      | Actual prompt sent to the model.                      |
 | `raw_response`       | string      | Original unmodified model output.                     |
-| `parsed_answer`      | string/null | Parsed answer, such as `Yes`, `No`, or `Uncertain`.   |
+| `parsed_answer`      | string/null | Parsed answer, such as `Yes`, `No`, `Supported`, `Unsupported`, or `Uncertain`. |
 | `parse_status`       | string      | Status of answer parsing.                             |
 | `generation_config`  | object      | Decoding configuration.                               |
 | `runtime`            | object      | Runtime metadata.                                     |
@@ -463,6 +507,7 @@ outputs/scored/{model_name}_{split}_scored.jsonl
 | `score`                  | string      | Final evaluation score.                              |
 | `is_correct`             | bool/null   | Whether the parsed answer is correct.                |
 | `hallucination_type`     | string/null | H1, H2, or null.                                     |
+| `h1_error_direction`     | string/null | `false_positive` for No->Yes, `false_negative` for Yes->No, or null. |
 | `evidence_relation`      | string      | Relation between model claim and available evidence. |
 | `error_category`         | string/null | Non-hallucination reliability issue if applicable.   |
 | `requires_manual_review` | bool        | Whether manual review is required.                   |
@@ -486,6 +531,14 @@ requires_manual_review
 null
 H1
 H2
+```
+
+### Allowed `h1_error_direction` values
+
+```text
+null
+false_positive
+false_negative
 ```
 
 ### Allowed `error_category` values
@@ -514,11 +567,30 @@ U_uncertain
 | ---------------- | ------------- | -------------------------------------------- |
 | `Yes`            | `Yes`         | `correct`                                    |
 | `No`             | `No`          | `correct`                                    |
-| `Yes`            | `No`          | `incorrect_non_hallucination` or `omission`  |
+| `Yes`            | `No`          | `H1_evidence_contradicted`                   |
 | `No`             | `Yes`         | `H1_evidence_contradicted`                   |
 | `Uncertain`      | `Yes` or `No` | `requires_manual_review` or `uncertain_case` |
 | `Yes` or `No`    | `Uncertain`   | `uncertain_or_abstention`                    |
 | invalid response | any           | `invalid_response`                           |
+
+### Basic scoring rule for claim-support QA
+
+| Ground truth  | Parsed answer | Default score                 |
+| ------------- | ------------- | ----------------------------- |
+| `Supported`   | `Supported`   | `correct`                     |
+| `Unsupported` | `Unsupported` | `correct`                     |
+| `Unsupported` | `Supported`   | `H2_evidence_unsupported`     |
+| `Supported`   | `Unsupported` | `incorrect_non_hallucination` |
+| `Supported` or `Unsupported` | `Uncertain` | `uncertain_or_abstention` |
+| invalid response | any        | `invalid_response`            |
+
+### H2 pilot sampling
+
+H2 item builders support configurable downsampling of `Supported` and
+`Unsupported` claims. The first pilot default targets 80% `Unsupported` and
+20% `Supported`, but this is an experiment setting rather than an optimal test
+set definition. Scripts should expose the target fraction and seed so later
+sensitivity analyses can rerun with different ratios.
 
 ### Examples
 
