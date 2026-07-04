@@ -2,34 +2,48 @@
 
 from __future__ import annotations
 
+from ghm.granularity.study2 import PROMPT_TEMPLATE_ID, QUESTION_TYPE
 
-YES_NO_UNCERTAIN_TEMPLATE_ID = "yes_no_uncertain_v1"
-YES_NO_UNCERTAIN_SYSTEM = (
+
+CLAIM_VERIFICATION_TEMPLATE_ID = PROMPT_TEMPLATE_ID
+CLAIM_VERIFICATION_SYSTEM = (
     "You are given a chest X-ray. "
-    "Answer only one of: Yes, No, or Uncertain."
+    "Answer only one of: A. Supported, B. Contradicted, C. Not enough evidence. "
+    "Return only A, B, or C."
 )
-SUPPORTED_UNSUPPORTED_TEMPLATE_ID = "supported_unsupported_uncertain_v1"
-SUPPORTED_UNSUPPORTED_SYSTEM = (
-    "You are given a chest X-ray. "
-    "Answer only one of: Supported, Unsupported, or Uncertain."
-)
+
+# Backward-compatible names for older imports.
+YES_NO_UNCERTAIN_TEMPLATE_ID = CLAIM_VERIFICATION_TEMPLATE_ID
+SUPPORTED_UNSUPPORTED_TEMPLATE_ID = CLAIM_VERIFICATION_TEMPLATE_ID
+
+
+def render_claim_verification_prompt(question: str) -> str:
+    """Render a Study 2 ABC claim-verification prompt."""
+
+    return f"{CLAIM_VERIFICATION_SYSTEM} Question: {question}"
 
 
 def render_yes_no_uncertain_prompt(question: str) -> str:
-    """Render a closed-form medical VQA prompt."""
+    """Backward-compatible wrapper for legacy call sites."""
 
-    return f"{YES_NO_UNCERTAIN_SYSTEM} Question: {question}"
+    return render_claim_verification_prompt(question)
 
 
 def render_supported_unsupported_prompt(question: str) -> str:
-    """Render a claim-support medical VQA prompt."""
+    """Backward-compatible wrapper for legacy call sites."""
 
-    return f"{SUPPORTED_UNSUPPORTED_SYSTEM} Question: {question}"
+    return render_claim_verification_prompt(question)
+
+
+def template_for_question_type(question_type: str | None) -> tuple[str, str]:
+    """Return template id and system message for a question type."""
+
+    if question_type == QUESTION_TYPE:
+        return CLAIM_VERIFICATION_TEMPLATE_ID, CLAIM_VERIFICATION_SYSTEM
+    return CLAIM_VERIFICATION_TEMPLATE_ID, CLAIM_VERIFICATION_SYSTEM
 
 
 def template_for_probe(hallucination_probe: str | None) -> tuple[str, str]:
-    """Return template id and renderer system for a hallucination probe."""
+    """Backward-compatible template lookup."""
 
-    if hallucination_probe == "H2":
-        return SUPPORTED_UNSUPPORTED_TEMPLATE_ID, SUPPORTED_UNSUPPORTED_SYSTEM
-    return YES_NO_UNCERTAIN_TEMPLATE_ID, YES_NO_UNCERTAIN_SYSTEM
+    return CLAIM_VERIFICATION_TEMPLATE_ID, CLAIM_VERIFICATION_SYSTEM

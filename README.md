@@ -5,9 +5,9 @@ language models, with a first-stage focus on chest X-ray data.
 
 ## Current Phase
 
-This repository is currently in the pre-data engineering setup phase. The
-project has not yet started real dataset parsing, model inference, model
-download, or training.
+This repository is currently focused on the Study 2 G1/G2 claim-verification
+pilot. Training, model downloads, and unrestricted real-data inspection remain
+out of scope for this repo workflow.
 
 ## Project Goal
 
@@ -22,12 +22,23 @@ and audited.
 ```text
 raw data
   -> intermediate tables
-  -> model-ready items
+  -> Study 2 model-ready claim-verification items
   -> prompts
   -> model outputs
   -> scored outputs
   -> analysis
 ```
+
+Study 2 uses one ABC answer space:
+
+```text
+A. Supported
+B. Contradicted
+C. Not enough evidence
+```
+
+G1 and G2 items are regenerated from intermediate Chest ImaGenome tables, then
+linked to already-downloaded MIMIC-CXR-JPG files with `--link-only-existing`.
 
 ## Data Safety
 

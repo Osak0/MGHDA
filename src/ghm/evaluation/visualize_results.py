@@ -9,7 +9,15 @@ from pathlib import Path
 from typing import Any
 
 
-SUMMARY_GROUPS = ["overall", "by_granularity", "by_hallucination_probe", "by_answer_label"]
+SUMMARY_GROUPS = [
+    "overall",
+    "by_granularity",
+    "by_hallucination_probe",
+    "by_claim_polarity",
+    "by_evidence_state",
+    "by_answer_label",
+    "by_parsed_answer",
+]
 METRIC_FIELDS = [
     "items",
     "scored_items",

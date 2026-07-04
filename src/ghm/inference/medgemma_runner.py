@@ -17,7 +17,7 @@ from typing import Any
 from ghm.granularity.common import read_jsonl, write_jsonl
 
 
-SPLITS = ["g1_h1", "g1_h2", "g2_h1", "g2_h2"]
+SPLITS = ["study2_g1", "study2_g2"]
 
 
 def resolve_image_path(image_path: Any, data_root: Path | None) -> Path | None:
@@ -73,6 +73,8 @@ def build_error_row(
         "granularity": metadata.get("granularity"),
         "question_type": metadata.get("question_type"),
         "hallucination_probe": metadata.get("hallucination_probe"),
+        "claim_polarity": metadata.get("claim_polarity"),
+        "evidence_state": metadata.get("evidence_state"),
     }
 
 
@@ -237,6 +239,8 @@ def run_medgemma(
                     "granularity": metadata.get("granularity"),
                     "question_type": metadata.get("question_type"),
                     "hallucination_probe": metadata.get("hallucination_probe"),
+                    "claim_polarity": metadata.get("claim_polarity"),
+                    "evidence_state": metadata.get("evidence_state"),
                 }
             )
         except Exception as exc:  # noqa: BLE001 - keep batch robust on remote runs.

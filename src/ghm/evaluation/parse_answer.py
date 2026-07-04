@@ -8,16 +8,30 @@ from pathlib import Path
 from typing import Any
 
 from ghm.granularity.common import read_jsonl, write_jsonl
-
-
-ANSWER_PATTERN = re.compile(
-    r"\b(unsupported|supported|uncertain|yes|no)\b", re.IGNORECASE
+from ghm.granularity.study2 import (
+    ANSWER_CONTRADICTED,
+    ANSWER_NOT_ENOUGH,
+    ANSWER_SUPPORTED,
 )
+
+
+LABEL_PATTERN = re.compile(
+    r"\b(not enough evidence|contradicted|unsupported|supported|uncertain|yes|no)\b",
+    re.IGNORECASE,
+)
+LETTER_PATTERN = re.compile(r"(?:^|[\s:])([ABC])(?:[\s\).:,-]|$)")
 CANONICAL = {
+    "a": ANSWER_SUPPORTED,
+    "b": ANSWER_CONTRADICTED,
+    "c": ANSWER_NOT_ENOUGH,
+    "supported": ANSWER_SUPPORTED,
+    "contradicted": ANSWER_CONTRADICTED,
+    "not enough evidence": ANSWER_NOT_ENOUGH,
+    # Legacy labels are retained so older outputs fail gracefully instead of
+    # becoming unparsable during transition runs.
     "yes": "Yes",
     "no": "No",
     "uncertain": "Uncertain",
-    "supported": "Supported",
     "unsupported": "Unsupported",
 }
 
@@ -30,7 +44,12 @@ def parse_closed_answer(raw_response: Any) -> tuple[str | None, str]:
     text = str(raw_response).strip()
     if not text:
         return None, "empty_response"
-    matches = [CANONICAL[match.group(1).lower()] for match in ANSWER_PATTERN.finditer(text)]
+
+    matches: list[str] = []
+    if text.lower() in {"a", "b", "c"}:
+        matches.append(CANONICAL[text.lower()])
+    matches.extend(CANONICAL[match.group(1).lower()] for match in LETTER_PATTERN.finditer(text))
+    matches.extend(CANONICAL[match.group(1).lower()] for match in LABEL_PATTERN.finditer(text))
     unique = list(dict.fromkeys(matches))
     if not unique:
         return None, "invalid_format"

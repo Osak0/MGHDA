@@ -1,4 +1,4 @@
-"""Build G2 H1/H2 model-ready items from Chest ImaGenome tables."""
+"""Build Study 2 G2 claim-verification items from Chest ImaGenome tables."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 from ghm.granularity.common import (
-    balance_binary_label_items,
     clean_source_assertion,
     get_image_record,
     image_index_by_key,
@@ -17,6 +16,19 @@ from ghm.granularity.common import (
     stable_item_id,
     update_summary,
     write_jsonl,
+)
+from ghm.granularity.study2 import (
+    CLAIM_NEGATIVE,
+    CLAIM_POSITIVE,
+    EVIDENCE_AFFIRMED,
+    EVIDENCE_NEGATED,
+    EVIDENCE_NOT_ENOUGH,
+    MISSING_FINDING_SAMPLE_SIZE,
+    QUESTION_TYPE,
+    answer_for_claim,
+    claim_text,
+    question_for_claim,
+    stable_missing_findings,
 )
 
 
@@ -61,146 +73,64 @@ IMAGE_INDEX_COLUMNS = [
 ]
 
 
-def build_g2_h1_items(
-    assertion_rows: list[dict[str, Any]],
-    object_rows: list[dict[str, Any]],
-    image_index_rows: list[dict[str, Any]] | None = None,
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Build G2 H1 yes/no anatomy-finding items."""
-
-    groups = _group_bound_anatomicalfindings(assertion_rows)
-    object_index = _object_index_by_key(object_rows)
-    image_index = image_index_by_key(image_index_rows or [])
-    items: list[dict[str, Any]] = []
-    conflict_groups = 0
-    missing_bbox_groups = 0
-    yes_items = 0
-    no_items = 0
-
-    for key in sorted(groups, key=safe_tuple_sort_key):
-        patient_id, study_id, image_id, bbox_name, label_name = key
-        rows = groups[key]
-        polarities = {row.get("polarity") for row in rows}
-        if "yes" in polarities and "no" in polarities:
-            conflict_groups += 1
-            continue
-        object_row = object_index.get((patient_id, study_id, image_id, bbox_name))
-        if object_row is None:
-            missing_bbox_groups += 1
-            continue
-        answer_label = "Yes" if "yes" in polarities else "No"
-        if answer_label == "Yes":
-            yes_items += 1
-        else:
-            no_items += 1
-        image_record = get_image_record(
-            image_index,
-            patient_id=patient_id,
-            study_id=study_id,
-            image_id=image_id,
-        )
-        items.append(
-            _base_item(
-                prefix="ci_g2_h1",
-                image_record=image_record,
-                target_finding=label_name,
-                target_anatomy=bbox_name,
-                question=f"Is there evidence of {label_name} in the {bbox_name}?",
-                answer_label=answer_label,
-                hallucination_probe="H1",
-                question_type="h1_yes_no_qa",
-                bbox=_bbox_from_object(object_row),
-                source_assertions=[clean_source_assertion(row) for row in rows],
-                evidence_sources=["E1_bbox", "E2_anatomy_finding_pair"],
-                extra_id_components={
-                    "target_finding": label_name,
-                    "target_anatomy": bbox_name,
-                },
-            )
-        )
-
-    return items, {
-        "candidate_groups": len(groups),
-        "items_written": len(items),
-        "yes_items": yes_items,
-        "no_items": no_items,
-        "excluded_conflict_groups": conflict_groups,
-        "excluded_missing_bbox_groups": missing_bbox_groups,
-    }
-
-
-def build_g2_h2_items(
+def build_g2_claim_verification_items(
     assertion_rows: list[dict[str, Any]],
     object_rows: list[dict[str, Any]],
     image_index_rows: list[dict[str, Any]] | None = None,
     *,
-    unsupported_per_anatomy: int = 1,
-    balance_h2: bool = True,
-    h2_unsupported_fraction: float = 0.8,
-    h2_sampling_seed: int = 42,
+    missing_finding_sample_size: int = MISSING_FINDING_SAMPLE_SIZE,
+    missing_finding_seed: int = 42,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Build G2 H2 claim-support anatomy-finding items."""
+    """Build G2 anatomy-level Study 2 claim-verification items."""
 
     groups = _group_bound_anatomicalfindings(assertion_rows)
     object_index = _object_index_by_key(object_rows)
     image_index = image_index_by_key(image_index_rows or [])
-    finding_vocab = sorted(
-        {
-            row.get("label_name")
-            for row in assertion_rows
-            if row.get("category") == "anatomicalfinding"
-            and row.get("polarity") in {"yes", "no"}
-            and row.get("label_name")
-        }
-    )
     mentioned_by_anatomy: dict[tuple[Any, ...], set[str]] = defaultdict(set)
     items: list[dict[str, Any]] = []
-    supported_items = 0
-    unsupported_items = 0
     conflict_groups = 0
     missing_bbox_groups = 0
+    affirmed_groups = 0
+    negated_groups = 0
+    missing_findings_sampled = 0
 
     for key in sorted(groups, key=safe_tuple_sort_key):
         patient_id, study_id, image_id, bbox_name, label_name = key
         rows = groups[key]
-        mentioned_by_anatomy[(patient_id, study_id, image_id, bbox_name)].add(label_name)
+        anatomy_key = (patient_id, study_id, image_id, bbox_name)
+        mentioned_by_anatomy[anatomy_key].add(label_name)
         polarities = {row.get("polarity") for row in rows}
         if "yes" in polarities and "no" in polarities:
             conflict_groups += 1
             continue
-        object_row = object_index.get((patient_id, study_id, image_id, bbox_name))
+        object_row = object_index.get(anatomy_key)
         if object_row is None:
             missing_bbox_groups += 1
             continue
-        polarity = "yes" if "yes" in polarities else "no"
-        claim = _claim(label_name, polarity=polarity, anatomy=bbox_name)
+        evidence_state = EVIDENCE_AFFIRMED if "yes" in polarities else EVIDENCE_NEGATED
+        if evidence_state == EVIDENCE_AFFIRMED:
+            affirmed_groups += 1
+        else:
+            negated_groups += 1
         image_record = get_image_record(
             image_index,
             patient_id=patient_id,
             study_id=study_id,
             image_id=image_id,
         )
-        items.append(
-            _base_item(
-                prefix="ci_g2_h2",
+        items.extend(
+            _claim_items(
+                prefix="study2_g2_claim",
                 image_record=image_record,
                 target_finding=label_name,
                 target_anatomy=bbox_name,
-                question=_support_question(claim),
-                answer_label="Supported",
-                hallucination_probe="H2",
-                question_type="h2_claim_support",
+                evidence_state=evidence_state,
                 bbox=_bbox_from_object(object_row),
                 source_assertions=[clean_source_assertion(row) for row in rows],
                 evidence_sources=["E1_bbox", "E2_anatomy_finding_pair"],
-                extra_id_components={
-                    "target_finding": label_name,
-                    "target_anatomy": bbox_name,
-                    "claim": claim,
-                },
+                missing_finding_sample_size=missing_finding_sample_size,
             )
         )
-        supported_items += 1
 
     for object_row in sorted(object_rows, key=_object_sort_key):
         patient_id = object_row.get("patient_id")
@@ -210,30 +140,32 @@ def build_g2_h2_items(
         if not image_id or not bbox_name:
             continue
         anatomy_key = (patient_id, study_id, image_id, bbox_name)
-        mentioned = mentioned_by_anatomy.get(anatomy_key, set())
-        missing_findings = [
-            finding
-            for finding in _stable_missing_findings(finding_vocab, mentioned, image_id, bbox_name)
-            if finding not in mentioned
-        ][:unsupported_per_anatomy]
+        sampled_findings = stable_missing_findings(
+            mentioned=mentioned_by_anatomy.get(anatomy_key, set()),
+            sample_size=missing_finding_sample_size,
+            seed=missing_finding_seed,
+            scope_components={
+                "granularity": "G2",
+                "patient_id": patient_id,
+                "study_id": study_id,
+                "image_id": image_id,
+                "bbox_name": bbox_name,
+            },
+        )
         image_record = get_image_record(
             image_index,
             patient_id=patient_id,
             study_id=study_id,
             image_id=image_id,
         )
-        for finding in missing_findings:
-            claim = _claim(finding, polarity="yes", anatomy=bbox_name)
-            items.append(
-                _base_item(
-                    prefix="ci_g2_h2",
+        for finding in sampled_findings:
+            items.extend(
+                _claim_items(
+                    prefix="study2_g2_claim",
                     image_record=image_record,
                     target_finding=finding,
                     target_anatomy=bbox_name,
-                    question=_support_question(claim),
-                    answer_label="Unsupported",
-                    hallucination_probe="H2",
-                    question_type="h2_claim_support",
+                    evidence_state=EVIDENCE_NOT_ENOUGH,
                     bbox=_bbox_from_object(object_row),
                     source_assertions=[
                         {
@@ -244,56 +176,51 @@ def build_g2_h2_items(
                         }
                     ],
                     evidence_sources=["E1_bbox", "E5_task_context"],
-                    extra_id_components={
-                        "target_finding": finding,
-                        "target_anatomy": bbox_name,
-                        "claim": claim,
-                    },
+                    missing_finding_sample_size=missing_finding_sample_size,
                 )
             )
-            unsupported_items += 1
-
-    balance_summary: dict[str, Any] = {
-        "balance_applied": False,
-        "balance_reason": "disabled",
-        "positive_label": "Supported",
-        "negative_label": "Unsupported",
-        "target_negative_fraction": h2_unsupported_fraction,
-        "positive_before": supported_items,
-        "negative_before": unsupported_items,
-        "positive_after": supported_items,
-        "negative_after": unsupported_items,
-        "excluded_by_ratio": 0,
-        "sampling_seed": h2_sampling_seed,
-    }
-    if balance_h2:
-        items, balance_summary = balance_binary_label_items(
-            items,
-            positive_label="Supported",
-            negative_label="Unsupported",
-            negative_fraction=h2_unsupported_fraction,
-            seed=h2_sampling_seed,
-        )
+            missing_findings_sampled += 1
 
     return items, {
-        "finding_vocab_size": len(finding_vocab),
-        "candidate_supported_groups": len(groups),
+        "candidate_groups": len(groups),
         "items_written": len(items),
-        "supported_items": balance_summary["positive_after"],
-        "unsupported_items": balance_summary["negative_after"],
-        "supported_items_before_balance": supported_items,
-        "unsupported_items_before_balance": unsupported_items,
+        "affirmed_groups": affirmed_groups,
+        "negated_groups": negated_groups,
+        "explicit_claim_items": 2 * (affirmed_groups + negated_groups),
+        "missing_findings_sampled": missing_findings_sampled,
+        "missing_claim_items": 2 * missing_findings_sampled,
+        "missing_finding_sample_size": missing_finding_sample_size,
+        "missing_finding_seed": missing_finding_seed,
         "excluded_conflict_groups": conflict_groups,
         "excluded_missing_bbox_groups": missing_bbox_groups,
-        "unsupported_per_anatomy": unsupported_per_anatomy,
-        "h2_balance": balance_summary,
     }
+
+
+def build_g2_h1_items(
+    assertion_rows: list[dict[str, Any]],
+    object_rows: list[dict[str, Any]],
+    image_index_rows: list[dict[str, Any]] | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Backward-compatible alias for the Study 2 G2 builder."""
+
+    return build_g2_claim_verification_items(assertion_rows, object_rows, image_index_rows)
+
+
+def build_g2_h2_items(
+    assertion_rows: list[dict[str, Any]],
+    object_rows: list[dict[str, Any]],
+    image_index_rows: list[dict[str, Any]] | None = None,
+    **_: Any,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Backward-compatible alias for the Study 2 G2 builder."""
+
+    return build_g2_claim_verification_items(assertion_rows, object_rows, image_index_rows)
 
 
 def main(argv: list[str] | None = None) -> int:
     """CLI entrypoint."""
 
-    parser = argparse.ArgumentParser(description="Build G2 H1/H2 items.")
+    parser = argparse.ArgumentParser(description="Build Study 2 G2 claim items.")
     parser.add_argument(
         "--attributes",
         type=Path,
@@ -310,34 +237,20 @@ def main(argv: list[str] | None = None) -> int:
         default=Path("data/interim/image_index.parquet"),
     )
     parser.add_argument(
-        "--h1-output",
+        "--output",
         type=Path,
-        default=Path("data/processed/items/g2_h1_items.jsonl"),
-    )
-    parser.add_argument(
-        "--h2-output",
-        type=Path,
-        default=Path("data/processed/items/g2_h2_items.jsonl"),
+        default=Path("data/processed/items/study2_g2_claim_verification_items.jsonl"),
     )
     parser.add_argument(
         "--summary",
         type=Path,
-        default=Path("outputs/audits/g1_g2_candidate_summary.json"),
+        default=Path("outputs/audits/study2_candidate_summary.json"),
     )
-    parser.add_argument("--unsupported-per-anatomy", type=int, default=1)
-    parser.add_argument(
-        "--h2-unsupported-fraction",
-        type=float,
-        default=0.8,
-        help="Pilot target fraction of Unsupported labels in G2 H2 items.",
-    )
-    parser.add_argument("--h2-sampling-seed", type=int, default=42)
-    parser.add_argument("--no-balance-h2", action="store_true")
+    parser.add_argument("--missing-finding-sample-size", type=int, default=2)
+    parser.add_argument("--missing-finding-seed", type=int, default=42)
     args = parser.parse_args(argv)
-    if args.unsupported_per_anatomy < 1:
-        parser.error("--unsupported-per-anatomy must be positive.")
-    if not 0 < args.h2_unsupported_fraction < 1:
-        parser.error("--h2-unsupported-fraction must be between 0 and 1.")
+    if args.missing_finding_sample_size < 0:
+        parser.error("--missing-finding-sample-size must be non-negative.")
 
     try:
         assertion_rows = read_parquet_rows(args.attributes, columns=ATTRIBUTE_COLUMNS)
@@ -346,27 +259,23 @@ def main(argv: list[str] | None = None) -> int:
     except RuntimeError as exc:
         parser.exit(status=1, message=f"error: {exc}\n")
 
-    h1_items, h1_summary = build_g2_h1_items(assertion_rows, object_rows, image_index_rows)
-    h2_items, h2_summary = build_g2_h2_items(
+    items, summary = build_g2_claim_verification_items(
         assertion_rows,
         object_rows,
         image_index_rows,
-        unsupported_per_anatomy=args.unsupported_per_anatomy,
-        balance_h2=not args.no_balance_h2,
-        h2_unsupported_fraction=args.h2_unsupported_fraction,
-        h2_sampling_seed=args.h2_sampling_seed,
+        missing_finding_sample_size=args.missing_finding_sample_size,
+        missing_finding_seed=args.missing_finding_seed,
     )
-    write_jsonl(h1_items, args.h1_output)
-    write_jsonl(h2_items, args.h2_output)
-    update_summary(args.summary, "g2_h1", h1_summary)
-    update_summary(args.summary, "g2_h2", h2_summary)
+    write_jsonl(items, args.output)
+    update_summary(args.summary, "study2_g2_claim_verification", summary)
     print(
-        "Built G2 items: "
-        f"h1={h1_summary['items_written']}, "
-        f"h2={h2_summary['items_written']}, "
-        f"h1_conflicts={h1_summary['excluded_conflict_groups']}, "
-        f"h2_conflicts={h2_summary['excluded_conflict_groups']}, "
-        f"missing_bbox={h1_summary['excluded_missing_bbox_groups'] + h2_summary['excluded_missing_bbox_groups']}"
+        "Built Study 2 G2 claim items: "
+        f"items={summary['items_written']}, "
+        f"affirmed={summary['affirmed_groups']}, "
+        f"negated={summary['negated_groups']}, "
+        f"missing_findings={summary['missing_findings_sampled']}, "
+        f"conflicts={summary['excluded_conflict_groups']}, "
+        f"missing_bbox={summary['excluded_missing_bbox_groups']}"
     )
     return 0
 
@@ -410,56 +319,70 @@ def _object_index_by_key(
     return index
 
 
-def _base_item(
+def _claim_items(
     *,
     prefix: str,
     image_record: dict[str, Any],
     target_finding: str,
     target_anatomy: str,
-    question: str,
-    answer_label: str,
-    hallucination_probe: str,
-    question_type: str,
+    evidence_state: str,
     bbox: dict[str, Any],
     source_assertions: list[dict[str, Any]],
     evidence_sources: list[str],
-    extra_id_components: dict[str, Any],
-) -> dict[str, Any]:
-    item_id = stable_item_id(
-        prefix,
-        {
-            "patient_id": image_record.get("patient_id"),
-            "study_id": image_record.get("study_id"),
-            "image_id": image_record.get("image_id"),
-            **extra_id_components,
-        },
-    )
-    return {
-        "item_id": item_id,
-        "source_dataset": "ChestImaGenome",
-        "patient_id": image_record.get("patient_id"),
-        "study_id": image_record.get("study_id"),
-        "image_id": image_record.get("image_id"),
-        "dicom_id": image_record.get("dicom_id"),
-        "image_path": image_record.get("image_path"),
-        "granularity": "G2_anatomical_localization",
-        "question_type": question_type,
-        "hallucination_probe": hallucination_probe,
-        "question": question,
-        "answer_label": answer_label,
-        "target_finding": target_finding,
-        "target_anatomy": target_anatomy,
-        "bbox": bbox,
-        "source_assertions": source_assertions,
-        "evidence_sources": evidence_sources,
-        "source_quality": "silver",
-        "valid_for_clean_qa": hallucination_probe == "H1",
-        "valid_for_false_premise": False,
-        "valid_for_roi_mask": True,
-        "valid_for_roi_only": True,
-        "valid_for_training": False,
-        "exclusion_flag": None,
-    }
+    missing_finding_sample_size: int,
+) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for claim_polarity in [CLAIM_POSITIVE, CLAIM_NEGATIVE]:
+        claim = claim_text(target_finding, claim_polarity=claim_polarity, anatomy=target_anatomy)
+        answer_label = answer_for_claim(
+            evidence_state=evidence_state,
+            claim_polarity=claim_polarity,
+        )
+        item_id = stable_item_id(
+            prefix,
+            {
+                "patient_id": image_record.get("patient_id"),
+                "study_id": image_record.get("study_id"),
+                "image_id": image_record.get("image_id"),
+                "target_anatomy": target_anatomy,
+                "target_finding": target_finding,
+                "claim_polarity": claim_polarity,
+                "claim": claim,
+            },
+        )
+        items.append(
+            {
+                "item_id": item_id,
+                "source_dataset": "ChestImaGenome",
+                "patient_id": image_record.get("patient_id"),
+                "study_id": image_record.get("study_id"),
+                "image_id": image_record.get("image_id"),
+                "dicom_id": image_record.get("dicom_id"),
+                "image_path": image_record.get("image_path"),
+                "granularity": "G2_anatomical_localization",
+                "question_type": QUESTION_TYPE,
+                "hallucination_probe": None,
+                "question": question_for_claim(claim),
+                "claim": claim,
+                "claim_polarity": claim_polarity,
+                "evidence_state": evidence_state,
+                "answer_label": answer_label,
+                "target_finding": target_finding,
+                "target_anatomy": target_anatomy,
+                "bbox": bbox,
+                "source_assertions": source_assertions,
+                "evidence_sources": evidence_sources,
+                "source_quality": "silver",
+                "valid_for_clean_qa": False,
+                "valid_for_false_premise": True,
+                "valid_for_roi_mask": True,
+                "valid_for_roi_only": True,
+                "valid_for_training": False,
+                "missing_finding_sample_size": missing_finding_sample_size,
+                "exclusion_flag": None,
+            }
+        )
+    return items
 
 
 def _bbox_from_object(row: dict[str, Any]) -> dict[str, Any]:
@@ -475,35 +398,6 @@ def _bbox_from_object(row: dict[str, Any]) -> dict[str, Any]:
         "original_y2": row.get("original_y2"),
         "coordinate_space": "original_image",
     }
-
-
-def _claim(finding: str, *, polarity: str, anatomy: str) -> str:
-    if polarity == "yes":
-        return f"There is evidence of {finding} in the {anatomy}."
-    return f"There isn't evidence of {finding} in the {anatomy}."
-
-
-def _support_question(claim: str) -> str:
-    return (
-        "Is the following claim supported by the chest X-ray? "
-        f"Claim: {claim}"
-    )
-
-
-def _stable_missing_findings(
-    finding_vocab: list[str],
-    mentioned: set[str],
-    image_id: Any,
-    bbox_name: Any,
-) -> list[str]:
-    missing = [finding for finding in finding_vocab if finding not in mentioned]
-    return sorted(
-        missing,
-        key=lambda finding: stable_item_id(
-            "rank",
-            {"image": image_id, "bbox_name": bbox_name, "finding": finding},
-        ),
-    )
 
 
 def _object_sort_key(row: dict[str, Any]) -> tuple[str, ...]:

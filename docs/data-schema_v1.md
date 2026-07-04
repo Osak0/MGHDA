@@ -321,6 +321,23 @@ D
 E
 ```
 
+For Study 2 claim verification:
+
+```text
+Supported
+Contradicted
+Not enough evidence
+```
+
+Study 2 items additionally use:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `claim` | string | Medical claim evaluated by the model. |
+| `claim_polarity` | string | `positive` or `negative`. |
+| `evidence_state` | string | `affirmed`, `negated`, or `not_enough_evidence`. |
+| `missing_finding_sample_size` | int | Number of unmentioned findings sampled per image or anatomy scope. |
+
 For G4 structured synthesis proxy, `answer_label` can be `null`, and the item should use `reference_claims`.
 
 ### Example: G2 model-ready item

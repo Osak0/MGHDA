@@ -8,10 +8,8 @@ from typing import Any
 
 from ghm.granularity.common import read_jsonl, write_jsonl
 from ghm.prompts.templates import (
-    SUPPORTED_UNSUPPORTED_TEMPLATE_ID,
-    YES_NO_UNCERTAIN_TEMPLATE_ID,
-    render_supported_unsupported_prompt,
-    render_yes_no_uncertain_prompt,
+    CLAIM_VERIFICATION_TEMPLATE_ID,
+    render_claim_verification_prompt,
 )
 
 
@@ -24,6 +22,8 @@ EVAL_METADATA_FIELDS = [
     "hallucination_probe",
     "target_finding",
     "target_anatomy",
+    "claim_polarity",
+    "evidence_state",
     "evidence_sources",
 ]
 
@@ -67,6 +67,8 @@ def build_prompt_layers(
                 "hallucination_probe": item.get("hallucination_probe"),
                 "target_finding": item.get("target_finding"),
                 "target_anatomy": item.get("target_anatomy"),
+                "claim_polarity": item.get("claim_polarity"),
+                "evidence_state": item.get("evidence_state"),
                 "evidence_sources": item.get("evidence_sources"),
             }
         )
@@ -95,11 +97,9 @@ def build_prompt_records(items: list[dict[str, Any]]) -> tuple[list[dict[str, An
 
 
 def render_prompt_for_item(item: dict[str, Any], question: str) -> tuple[str, str]:
-    """Render the prompt matching a probe's answer space."""
+    """Render the prompt matching the Study 2 ABC answer space."""
 
-    if item.get("hallucination_probe") == "H2":
-        return SUPPORTED_UNSUPPORTED_TEMPLATE_ID, render_supported_unsupported_prompt(question)
-    return YES_NO_UNCERTAIN_TEMPLATE_ID, render_yes_no_uncertain_prompt(question)
+    return CLAIM_VERIFICATION_TEMPLATE_ID, render_claim_verification_prompt(question)
 
 
 def main(argv: list[str] | None = None) -> int:

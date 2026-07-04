@@ -6,6 +6,13 @@ from ghm.inference.medgemma_runner import (
     metadata_by_item_id,
     resolve_image_path,
 )
+from ghm.granularity.study2 import (
+    ANSWER_SUPPORTED,
+    CLAIM_POSITIVE,
+    EVIDENCE_AFFIRMED,
+    PROMPT_TEMPLATE_ID,
+    QUESTION_TYPE,
+)
 
 
 def test_resolve_image_path_maps_relative_prompt_path_to_data_root(tmp_path):
@@ -31,23 +38,25 @@ def test_dry_run_counts_existing_images_and_metadata(tmp_path):
         {
             "item_id": "a",
             "image_path": "data/files/p10/p100/s500/dicom.jpg",
-            "prompt_template_id": "yes_no_uncertain_v1",
+            "prompt_template_id": PROMPT_TEMPLATE_ID,
             "prompt": "Question",
         },
         {
             "item_id": "b",
             "image_path": "data/files/missing.jpg",
-            "prompt_template_id": "yes_no_uncertain_v1",
+            "prompt_template_id": PROMPT_TEMPLATE_ID,
             "prompt": "Question",
         },
     ]
     metadata = [
         {
             "item_id": "a",
-            "answer_label": "Yes",
+            "answer_label": ANSWER_SUPPORTED,
             "granularity": "G1_finding_existence",
-            "question_type": "h1_yes_no_qa",
-            "hallucination_probe": "H1",
+            "question_type": QUESTION_TYPE,
+            "hallucination_probe": None,
+            "claim_polarity": CLAIM_POSITIVE,
+            "evidence_state": EVIDENCE_AFFIRMED,
         }
     ]
 
@@ -70,14 +79,16 @@ def test_error_row_preserves_eval_metadata_but_not_model_answer_in_prompt():
     record = {
         "item_id": "a",
         "image_path": "data/files/missing.jpg",
-        "prompt_template_id": "yes_no_uncertain_v1",
+        "prompt_template_id": PROMPT_TEMPLATE_ID,
         "prompt": "Question",
     }
     metadata = {
-        "answer_label": "No",
+        "answer_label": ANSWER_SUPPORTED,
         "granularity": "G1_finding_existence",
-        "question_type": "h1_yes_no_qa",
-        "hallucination_probe": "H1",
+        "question_type": QUESTION_TYPE,
+        "hallucination_probe": None,
+        "claim_polarity": CLAIM_POSITIVE,
+        "evidence_state": EVIDENCE_AFFIRMED,
     }
 
     row = build_error_row(
@@ -91,7 +102,9 @@ def test_error_row_preserves_eval_metadata_but_not_model_answer_in_prompt():
     )
 
     assert "answer_label" not in record
-    assert row["answer_label"] == "No"
+    assert row["answer_label"] == ANSWER_SUPPORTED
+    assert row["claim_polarity"] == CLAIM_POSITIVE
+    assert row["evidence_state"] == EVIDENCE_AFFIRMED
     assert row["raw_response"] == ""
     assert row["runtime"]["status"] == "error"
 

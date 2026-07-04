@@ -1,38 +1,5 @@
 # Granularity Mapping
 
-## Study 2 Claim Verification
-
-Study 2 replaces the earlier separate H1 yes/no and H2 supported/unsupported
-questions with one claim-verification task for G1 and G2.
-
-Answer space:
-
-```text
-A. Supported
-B. Contradicted
-C. Not enough evidence
-```
-
-For every explicitly mentioned anatomical finding, construct two claims:
-
-- Positive claim: `There is evidence of {finding} in this chest X-ray.`
-- Negative claim: `There isn't evidence of {finding} in this chest X-ray.`
-
-For G2, replace `in this chest X-ray` with `in the {bbox_name}` and require a
-valid anatomy-bound Chest ImaGenome object bbox.
-
-Label construction:
-
-- If the source relation is `yes`, positive claims are `Supported` and negative
-  claims are `Contradicted`.
-- If the source relation is `no`, positive claims are `Contradicted` and
-  negative claims are `Supported`.
-- Missing evidence is never converted into negative evidence. For unmentioned
-  findings sampled from the fixed Chest ImaGenome anatomical finding
-  vocabulary, both claims are labeled `Not enough evidence`.
-- The first Study 2 pilot samples 2 unmentioned anatomical findings per image
-  for G1 and per anatomy region for G2, using a fixed seed.
-
 ## MIMIC-CXR
 
 the source dataset
@@ -83,10 +50,10 @@ For h1: All anatomicalfinding from all attributes in this image.
 - Uncertain: The model cannot make a judgment. Use as abstention.
 - Conflict: both positive and negative assertions exist for the same finding; exclude from the first pilot or send to manual review.
 
-For h2:
+For h2: judge rule
 
-- Supported: The anatomicalfinding has been mentioned in this image. 'anatomicalfinding|yes|...' for There is evidence of {finding}. 'anatomicalfinding|no|...' for There isn't evidence of {finding}.
-- Unsupported: The anatomicalfinding hasn't been mentioned in this image. We can't judge.
+- Supported: 'anatomicalfinding|yes|...' for There is evidence of {finding}. 'anatomicalfinding|no|...' for There isn't evidence of {finding}.
+- Unsupported: 'anatomicalfinding|yes|...' for There isn't evidence of {finding}. 'anatomicalfinding|no|...' for There is evidence of {finding}.
 - Uncertain: The model can't make a judgement. Use as abstention.
 - Pilot sampling: H2 uses a configurable Unsupported/Supported balance. The first pilot default is 80% Unsupported and 20% Supported, but this is an experimental setting, not a claim that 8/2 is optimal.
 

@@ -1,4 +1,4 @@
-"""Score closed QA outputs against constructed answer labels."""
+"""Score Study 2 closed claim-verification outputs."""
 
 from __future__ import annotations
 
@@ -8,15 +8,22 @@ from pathlib import Path
 from typing import Any
 
 from ghm.granularity.common import read_jsonl, write_jsonl
+from ghm.granularity.study2 import (
+    ANSWER_CONTRADICTED,
+    ANSWER_NOT_ENOUGH,
+    ANSWER_SUPPORTED,
+)
+
+
+STUDY2_LABELS = {ANSWER_SUPPORTED, ANSWER_CONTRADICTED, ANSWER_NOT_ENOUGH}
 
 
 def score_closed_qa_row(row: dict[str, Any]) -> dict[str, Any]:
-    """Score one parsed closed-QA response."""
+    """Score one parsed Study 2 claim-verification response."""
 
     answer_label = row.get("answer_label")
     parsed_answer = row.get("parsed_answer")
     parse_status = row.get("parse_status")
-    hallucination_probe = row.get("hallucination_probe")
 
     score = "requires_manual_review"
     hallucination_type = None
@@ -28,66 +35,40 @@ def score_closed_qa_row(row: dict[str, Any]) -> dict[str, Any]:
 
     if parse_status != "success" or parsed_answer is None:
         score = "invalid_response"
-        evidence_relation = "U_uncertain"
-        requires_manual_review = False
         is_correct = False
     elif answer_label == parsed_answer:
         score = "correct"
-        evidence_relation = (
-            "S0_unsupported" if answer_label == "Unsupported" else "S2_directly_supported"
-        )
+        evidence_relation = _evidence_relation_for_label(answer_label)
         is_correct = True
-    elif answer_label == "No" and parsed_answer == "Yes":
+    elif answer_label == ANSWER_CONTRADICTED and parsed_answer == ANSWER_SUPPORTED:
         score = "H1_evidence_contradicted"
         hallucination_type = "H1"
-        h1_error_direction = "false_positive"
         evidence_relation = "S-1_contradicted"
+        error_category = "contradicted_claim_supported"
         is_correct = False
-    elif answer_label == "Yes" and parsed_answer == "No":
-        score = "H1_evidence_contradicted"
-        hallucination_type = "H1"
-        h1_error_direction = "false_negative"
-        evidence_relation = "S-1_contradicted"
-        is_correct = False
-    elif answer_label == "Unsupported" and parsed_answer == "Supported":
+    elif answer_label == ANSWER_NOT_ENOUGH and parsed_answer == ANSWER_SUPPORTED:
         score = "H2_evidence_unsupported"
         hallucination_type = "H2"
         evidence_relation = "S0_unsupported"
+        error_category = "unsupported_claim_supported"
         is_correct = False
-    elif answer_label == "Supported" and parsed_answer == "Unsupported":
+    elif answer_label in STUDY2_LABELS and parsed_answer in STUDY2_LABELS:
         score = "incorrect_non_hallucination"
-        evidence_relation = "S0_unsupported"
-        error_category = "unsupported_rejection"
+        evidence_relation = _evidence_relation_for_label(answer_label)
+        error_category = "wrong_claim_verification_label"
         is_correct = False
-    elif parsed_answer == "Uncertain" and answer_label in {
-        "Yes",
-        "No",
-        "Supported",
-        "Unsupported",
-    }:
-        score = "uncertain_or_abstention"
-        evidence_relation = "U_uncertain"
-        is_correct = False
-    elif answer_label == "Uncertain" and parsed_answer in {
-        "Yes",
-        "No",
-        "Supported",
-        "Unsupported",
-    }:
-        score = "requires_manual_review"
-        evidence_relation = "U_uncertain"
-        error_category = "uncertain_case"
-        is_correct = None
-        requires_manual_review = True
     else:
         requires_manual_review = True
+        is_correct = None
 
     return {
         "item_id": row.get("item_id"),
         "model_name": row.get("model_name"),
         "granularity": row.get("granularity"),
         "question_type": row.get("question_type"),
-        "hallucination_probe": hallucination_probe,
+        "hallucination_probe": row.get("hallucination_probe"),
+        "claim_polarity": row.get("claim_polarity"),
+        "evidence_state": row.get("evidence_state"),
         "answer_label": answer_label,
         "parsed_answer": parsed_answer,
         "score": score,
@@ -108,13 +89,15 @@ def score_closed_qa_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def summarize_scores(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    """Summarize scores overall and by core item metadata."""
+    """Summarize scores overall and by Study 2 metadata."""
 
     return {
         "overall": _summarize_group(rows),
         "by_granularity": _summarize_by(rows, "granularity"),
-        "by_hallucination_probe": _summarize_by(rows, "hallucination_probe"),
+        "by_claim_polarity": _summarize_by(rows, "claim_polarity"),
+        "by_evidence_state": _summarize_by(rows, "evidence_state"),
         "by_answer_label": _summarize_by(rows, "answer_label"),
+        "by_parsed_answer": _summarize_by(rows, "parsed_answer"),
     }
 
 
@@ -137,17 +120,25 @@ def main(argv: list[str] | None = None) -> int:
         file.write("\n")
     overall = summary["overall"]
     print(
-        "Scored closed QA: "
+        "Scored Study 2 claim verification: "
         f"items={overall['items']}, "
         f"accuracy={overall['accuracy']}, "
-        f"h1_count={overall['h1_count']}, "
-        f"h1_false_positive_count={overall['h1_false_positive_count']}, "
-        f"h1_false_negative_count={overall['h1_false_negative_count']}, "
-        f"h2_count={overall['h2_count']}, "
+        f"contradicted_supported_count={overall['h1_count']}, "
+        f"not_enough_supported_count={overall['h2_count']}, "
         f"invalid_count={overall['invalid_count']}, "
         f"manual_review_count={overall['manual_review_count']}"
     )
     return 0
+
+
+def _evidence_relation_for_label(label: Any) -> str:
+    if label == ANSWER_SUPPORTED:
+        return "S2_directly_supported"
+    if label == ANSWER_CONTRADICTED:
+        return "S-1_contradicted"
+    if label == ANSWER_NOT_ENOUGH:
+        return "S0_unsupported"
+    return "U_uncertain"
 
 
 def _summarize_by(rows: list[dict[str, Any]], field: str) -> dict[str, Any]:
@@ -162,29 +153,35 @@ def _summarize_group(rows: list[dict[str, Any]]) -> dict[str, Any]:
     items = len(rows)
     correct = sum(1 for row in rows if row.get("is_correct") is True)
     scored = sum(1 for row in rows if row.get("is_correct") is not None)
-    h1_false_positive = sum(
-        1 for row in rows if row.get("h1_error_direction") == "false_positive"
-    )
-    h1_false_negative = sum(
-        1 for row in rows if row.get("h1_error_direction") == "false_negative"
-    )
+    h1_count = sum(1 for row in rows if row.get("score") == "H1_evidence_contradicted")
+    h2_count = sum(1 for row in rows if row.get("score") == "H2_evidence_unsupported")
     return {
         "items": items,
         "scored_items": scored,
         "correct": correct,
         "accuracy": round(correct / scored, 6) if scored else None,
-        "h1_count": h1_false_positive + h1_false_negative,
-        "h1_false_positive_count": h1_false_positive,
-        "h1_false_negative_count": h1_false_negative,
-        "h2_count": sum(1 for row in rows if row.get("score") == "H2_evidence_unsupported"),
+        "h1_count": h1_count,
+        "h1_false_positive_count": h1_count,
+        "h1_false_negative_count": 0,
+        "h2_count": h2_count,
         "invalid_count": sum(1 for row in rows if row.get("score") == "invalid_response"),
         "manual_review_count": sum(
             1 for row in rows if row.get("requires_manual_review") is True
         ),
-        "uncertain_or_abstention_count": sum(
-            1 for row in rows if row.get("score") == "uncertain_or_abstention"
+        "uncertain_or_abstention_count": 0,
+        "incorrect_non_hallucination_count": sum(
+            1 for row in rows if row.get("score") == "incorrect_non_hallucination"
         ),
+        "answer_distribution": _count_values(rows, "parsed_answer"),
     }
+
+
+def _count_values(rows: list[dict[str, Any]], field: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        key = str(row.get(field))
+        counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 if __name__ == "__main__":

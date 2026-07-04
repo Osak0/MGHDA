@@ -12,9 +12,22 @@ from pathlib import Path
 from typing import Any
 
 from ghm.granularity.common import read_jsonl, write_jsonl
+from ghm.granularity.study2 import (
+    ANSWER_CONTRADICTED,
+    ANSWER_NOT_ENOUGH,
+    ANSWER_SUPPORTED,
+)
 
 
-ORACLE_LABELS = {"Yes", "No", "Uncertain", "Supported", "Unsupported"}
+ORACLE_LABELS = {
+    "Yes",
+    "No",
+    "Uncertain",
+    "Supported",
+    "Unsupported",
+    ANSWER_CONTRADICTED,
+    ANSWER_NOT_ENOUGH,
+}
 
 
 def build_mock_outputs(
@@ -63,6 +76,8 @@ def build_mock_outputs(
                 "granularity": metadata.get("granularity"),
                 "question_type": metadata.get("question_type"),
                 "hallucination_probe": metadata.get("hallucination_probe"),
+                "claim_polarity": metadata.get("claim_polarity"),
+                "evidence_state": metadata.get("evidence_state"),
             }
         )
     return outputs
@@ -88,6 +103,8 @@ def main(argv: list[str] | None = None) -> int:
             "always_yes",
             "always_no",
             "always_supported",
+            "always_contradicted",
+            "always_not_enough",
             "always_unsupported",
             "alternating",
             "invalid",
@@ -124,19 +141,22 @@ def _mock_response(
     hallucination_probe: Any,
 ) -> str:
     if mode == "oracle":
-        return str(answer_label) if answer_label in ORACLE_LABELS else "Uncertain"
+        return str(answer_label) if answer_label in ORACLE_LABELS else ANSWER_NOT_ENOUGH
     if mode == "always_yes":
         return "Yes"
     if mode == "always_no":
         return "No"
     if mode == "always_supported":
-        return "Supported"
+        return ANSWER_SUPPORTED
+    if mode == "always_contradicted":
+        return ANSWER_CONTRADICTED
+    if mode == "always_not_enough":
+        return ANSWER_NOT_ENOUGH
     if mode == "always_unsupported":
         return "Unsupported"
     if mode == "alternating":
-        if hallucination_probe == "H2":
-            return "Supported" if index % 2 == 0 else "Unsupported"
-        return "Yes" if index % 2 == 0 else "No"
+        labels = [ANSWER_SUPPORTED, ANSWER_CONTRADICTED, ANSWER_NOT_ENOUGH]
+        return labels[index % len(labels)]
     return "This response intentionally does not follow the requested format."
 
 
