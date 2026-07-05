@@ -7,6 +7,10 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from ghm.data.audit_chest_imagenome import (
+    USE_FOR_G2,
+    build_bbox_finding_reference_tables,
+)
 from ghm.granularity.common import (
     clean_source_assertion,
     get_image_record,
@@ -28,7 +32,7 @@ from ghm.granularity.study2 import (
     answer_for_claim,
     claim_text,
     question_for_claim,
-    stable_missing_findings,
+    stable_missing_findings_from_vocab,
 )
 
 
@@ -87,12 +91,20 @@ def build_g2_claim_verification_items(
     object_index = _object_index_by_key(object_rows)
     image_index = image_index_by_key(image_index_rows or [])
     mentioned_by_anatomy: dict[tuple[Any, ...], set[str]] = defaultdict(set)
+    same_bbox_vocab = _same_bbox_vocab(groups)
+    positive_findings_by_image = _positive_findings_by_image(assertion_rows)
+    _, bbox_quality_rows, _ = build_bbox_finding_reference_tables(object_rows, assertion_rows)
+    recommended_by_bbox = {
+        row["bbox_name"]: row["recommended_g2_use"] for row in bbox_quality_rows
+    }
     items: list[dict[str, Any]] = []
     conflict_groups = 0
     missing_bbox_groups = 0
     affirmed_groups = 0
     negated_groups = 0
     missing_findings_sampled = 0
+    missing_bbox_not_use_for_g2 = 0
+    missing_candidate_shortage = 0
 
     for key in sorted(groups, key=safe_tuple_sort_key):
         patient_id, study_id, image_id, bbox_name, label_name = key
@@ -140,8 +152,14 @@ def build_g2_claim_verification_items(
         if not image_id or not bbox_name:
             continue
         anatomy_key = (patient_id, study_id, image_id, bbox_name)
-        sampled_findings = stable_missing_findings(
-            mentioned=mentioned_by_anatomy.get(anatomy_key, set()),
+        if recommended_by_bbox.get(str(bbox_name)) != USE_FOR_G2:
+            missing_bbox_not_use_for_g2 += 1
+            continue
+        mentioned = set(mentioned_by_anatomy.get(anatomy_key, set()))
+        mentioned.update(positive_findings_by_image.get(image_id, set()))
+        sampled_findings = stable_missing_findings_from_vocab(
+            vocabulary=same_bbox_vocab.get(str(bbox_name), set()),
+            mentioned=mentioned,
             sample_size=missing_finding_sample_size,
             seed=missing_finding_seed,
             scope_components={
@@ -152,6 +170,8 @@ def build_g2_claim_verification_items(
                 "bbox_name": bbox_name,
             },
         )
+        if len(sampled_findings) < missing_finding_sample_size:
+            missing_candidate_shortage += 1
         image_record = get_image_record(
             image_index,
             patient_id=patient_id,
@@ -193,6 +213,9 @@ def build_g2_claim_verification_items(
         "missing_finding_seed": missing_finding_seed,
         "excluded_conflict_groups": conflict_groups,
         "excluded_missing_bbox_groups": missing_bbox_groups,
+        "missing_bbox_not_use_for_g2": missing_bbox_not_use_for_g2,
+        "missing_candidate_shortage": missing_candidate_shortage,
+        "missing_source": "same_bbox_vocabulary",
     }
 
 
@@ -302,6 +325,29 @@ def _group_bound_anatomicalfindings(
         )
         groups[key].append(row)
     return groups
+
+
+def _same_bbox_vocab(
+    groups: dict[tuple[Any, ...], list[dict[str, Any]]],
+) -> dict[str, set[str]]:
+    vocab: dict[str, set[str]] = defaultdict(set)
+    for key in groups:
+        _, _, _, bbox_name, label_name = key
+        vocab[str(bbox_name)].add(str(label_name))
+    return vocab
+
+
+def _positive_findings_by_image(rows: list[dict[str, Any]]) -> dict[Any, set[str]]:
+    positives: dict[Any, set[str]] = defaultdict(set)
+    for row in rows:
+        if row.get("category") != "anatomicalfinding":
+            continue
+        if row.get("polarity") != "yes":
+            continue
+        if not row.get("image_id") or not row.get("label_name"):
+            continue
+        positives[row.get("image_id")].add(str(row.get("label_name")))
+    return positives
 
 
 def _object_index_by_key(

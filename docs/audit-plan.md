@@ -21,6 +21,15 @@ ambiguous evidence into negative labels.
 - Check phrase coverage for structured labels.
 - Verify that `attribute` is treated as a dataset field, not as G3 clinical
   attribute evidence by itself.
+- Build the aggregate G2 bbox-finding reference tables:
+  `bbox_finding_vocab_summary.csv`,
+  `bbox_name_quality_summary.csv`, and
+  `bbox_finding_reference_summary.json`.
+- Use only aggregate counts, rates, `bbox_name`, and `label_name` in these
+  tables. Do not output patient, study, image, report, phrase, or image path
+  fields.
+- Before constructing G2 missing-evidence probes, verify that each `bbox_name`
+  has complete original bbox coordinates and enough same-bbox finding coverage.
 
 ## 3. RadGraph Audit Checklist
 

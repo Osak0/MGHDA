@@ -33,7 +33,7 @@ C. Not enough evidence
 If < relation > is yes, the right answer for Question 1 is A ,and for Question 2 is B.
 If < relation > is no, the right anwser for Question 1 is B ,and for Question 2 is A.
 
-For unmentioned findings, use a fixed Chest ImaGenome anatomical finding vocabulary ,we also construct 2 questions as above.
+For unmentioned findings, use a fixed Chest ImaGenome anatomical finding vocabulary and we need to assure that the bbox_name of the anatomicalfindings are the same, we also construct 2 questions as above.
 Missing evidence must be labeled as Not enough evidence, not Contradicted.
 As we can't judge by yes or no ,so the right answer for Question 1 and 2 is C.
 

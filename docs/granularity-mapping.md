@@ -31,7 +31,17 @@ Label construction:
   findings sampled from the fixed Chest ImaGenome anatomical finding
   vocabulary, both claims are labeled `Not enough evidence`.
 - The first Study 2 pilot samples 2 unmentioned anatomical findings per image
-  for G1 and per anatomy region for G2, using a fixed seed.
+  for G1 and per eligible anatomy region for G2, using a fixed seed.
+- G1 missing-evidence probes use the fixed global Chest ImaGenome anatomical
+  finding vocabulary.
+- G2 missing-evidence probes use only the same-bbox vocabulary from
+  `bbox_finding_vocab_summary.csv`: findings previously observed with the same
+  `bbox_name`. The builder also excludes findings already mentioned in the
+  current image+bbox and findings that are positive elsewhere in the same
+  image.
+- If `bbox_name_quality_summary.csv` would classify a `bbox_name` as anything
+  other than `use_for_g2`, G2 keeps only explicit yes/no claims for that bbox
+  and does not construct missing-evidence probes.
 
 ## MIMIC-CXR
 

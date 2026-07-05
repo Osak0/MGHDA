@@ -113,7 +113,26 @@ def stable_missing_findings(
 ) -> list[str]:
     """Choose unmentioned findings from the fixed vocabulary deterministically."""
 
-    missing = [finding for finding in ANATOMICAL_FINDING_VOCAB if finding not in mentioned]
+    return stable_missing_findings_from_vocab(
+        vocabulary=ANATOMICAL_FINDING_VOCAB,
+        mentioned=mentioned,
+        sample_size=sample_size,
+        seed=seed,
+        scope_components=scope_components,
+    )
+
+
+def stable_missing_findings_from_vocab(
+    *,
+    vocabulary: list[str] | set[str],
+    mentioned: set[str],
+    sample_size: int,
+    seed: int,
+    scope_components: dict[str, Any],
+) -> list[str]:
+    """Choose unmentioned findings from a supplied vocabulary deterministically."""
+
+    missing = sorted(finding for finding in vocabulary if finding not in mentioned)
     ranked = sorted(
         missing,
         key=lambda finding: stable_item_id(

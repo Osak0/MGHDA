@@ -79,7 +79,30 @@ def test_g1_missing_finding_sampling_is_deterministic():
 
 
 def test_g2_claim_verification_requires_bbox_and_samples_missing_per_anatomy():
-    rows = [_assertion("a1", label_name="pneumothorax", polarity="no", bbox_name="right lung")]
+    rows = [
+        _assertion("a1", label_name="pneumothorax", polarity="no", bbox_name="right lung"),
+        _assertion(
+            "a2",
+            label_name="atelectasis",
+            polarity="no",
+            bbox_name="right lung",
+            image_id="dicom-b",
+        ),
+        _assertion(
+            "a3",
+            label_name="lung opacity",
+            polarity="yes",
+            bbox_name="right lung",
+            image_id="dicom-c",
+        ),
+        _assertion(
+            "a4",
+            label_name="enlarged cardiac silhouette",
+            polarity="yes",
+            bbox_name="cardiac silhouette",
+            image_id="dicom-d",
+        ),
+    ]
     objects = [_object_row()]
     items, summary = build_g2_claim_verification_items(
         rows,
@@ -107,9 +130,54 @@ def test_g2_claim_verification_requires_bbox_and_samples_missing_per_anatomy():
     assert negative["answer_label"] == ANSWER_SUPPORTED
     assert positive["bbox"]["bbox_name"] == "right lung"
     assert len(missing_items) == 4
+    assert {item["target_finding"] for item in missing_items} == {
+        "atelectasis",
+        "lung opacity",
+    }
     assert summary["missing_findings_sampled"] == 2
     assert summary["items_written"] == 6
     assert all(item["target_anatomy"] == "right lung" for item in items)
+    assert summary["missing_source"] == "same_bbox_vocabulary"
+
+
+def test_g2_missing_excludes_positive_findings_elsewhere_in_current_image():
+    rows = [
+        _assertion("a1", label_name="pneumothorax", polarity="no", bbox_name="right lung"),
+        _assertion(
+            "a2",
+            label_name="atelectasis",
+            polarity="no",
+            bbox_name="right lung",
+            image_id="dicom-b",
+        ),
+        _assertion(
+            "a3",
+            label_name="lung opacity",
+            polarity="yes",
+            bbox_name="right lung",
+            image_id="dicom-c",
+        ),
+        _assertion(
+            "a4",
+            label_name="atelectasis",
+            polarity="yes",
+            bbox_name="left lung",
+        ),
+    ]
+
+    items, summary = build_g2_claim_verification_items(
+        rows,
+        [_object_row()],
+        [_image_index()],
+        missing_finding_sample_size=2,
+        missing_finding_seed=3,
+    )
+
+    missing_items = [item for item in items if item["evidence_state"] == EVIDENCE_NOT_ENOUGH]
+
+    assert {item["target_finding"] for item in missing_items} == {"lung opacity"}
+    assert summary["missing_findings_sampled"] == 1
+    assert summary["missing_candidate_shortage"] == 1
 
 
 def test_conflicts_are_excluded_and_counted():
@@ -173,12 +241,13 @@ def _assertion(
     label_name,
     polarity,
     bbox_name=None,
+    image_id="dicom-a",
 ):
     return {
         "assertion_id": assertion_id,
         "patient_id": "10000032",
         "study_id": "50414267",
-        "image_id": "dicom-a",
+        "image_id": image_id,
         "bbox_name": bbox_name,
         "anatomy_bound": bbox_name is not None,
         "raw_label": f"anatomicalfinding|{polarity}|{label_name}",
