@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${MGHDA_ROOT:=/xjtu-mlp-vepfs/wangruiyang/MGHDA}"
-: "${MGHDA_DATA_ROOT:=/xjtu-mlp-vepfs/wangruiyang/MGHDA-data}"
+source "$(dirname "$0")/lib/study2_env.sh"
+require_env MGHDA_DATA_ROOT
 : "${MISSING_FINDING_SAMPLE_SIZE:=2}"
 : "${MISSING_FINDING_SEED:=42}"
 : "${MIMIC_METADATA_CSV:=$MGHDA_DATA_ROOT/data/interim/mimic_metadata.csv}"
@@ -10,10 +10,7 @@ set -euo pipefail
 : "${MIMIC_JPG_FILES_ROOT:=$MGHDA_DATA_ROOT/data/files}"
 
 cd "$MGHDA_ROOT"
-export PYTHONPATH="$MGHDA_ROOT/src"
-
 mkdir -p "$MGHDA_DATA_ROOT/data/processed/items"
-mkdir -p "$MGHDA_DATA_ROOT/data/processed/prompts"
 mkdir -p "$MGHDA_DATA_ROOT/outputs/audits"
 
 python -m ghm.granularity.build_g1_items \
@@ -47,10 +44,3 @@ python -m ghm.data.link_and_download_mimic_jpg \
   --url-list "$MGHDA_DATA_ROOT/data/interim/study2_needed_mimic_jpg_urls.txt" \
   --summary "$MGHDA_DATA_ROOT/outputs/audits/study2_mimic_jpg_link_summary.json" \
   --link-only-existing
-
-for split in study2_g1 study2_g2; do
-  python -m ghm.prompts.build_prompts \
-    --input "$MGHDA_DATA_ROOT/data/processed/items/${split}_claim_verification_items_linked.jsonl" \
-    --model-inputs-output "$MGHDA_DATA_ROOT/data/processed/prompts/${split}_claim_verification_model_inputs.jsonl" \
-    --eval-metadata-output "$MGHDA_DATA_ROOT/data/processed/prompts/${split}_claim_verification_eval_metadata.jsonl"
-done

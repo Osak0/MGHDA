@@ -1,11 +1,12 @@
 # Granularity Mapping
 
-## Study 2 Claim Verification
+This is the source of truth for the current optimized Study 2 experiment. The
+taxonomy names remain stable; only G1 and G2 are runnable in this repository.
 
-Study 2 replaces the earlier separate H1 yes/no and H2 supported/unsupported
-questions with one claim-verification task for G1 and G2.
+## Study 2 common task
 
-Answer space:
+G1 and G2 use `claim_verification_abc` with template
+`claim_verification_abc_v1` and exactly three labels:
 
 ```text
 A. Supported
@@ -13,358 +14,54 @@ B. Contradicted
 C. Not enough evidence
 ```
 
-For every explicitly mentioned anatomical finding, construct two claims:
+For each selected finding, construct both positive and negative claims. Explicit
+`yes` and `no` assertions determine Supported versus Contradicted. A missing
+assertion is not negative evidence and maps to Not enough evidence for both
+claim polarities. `Unknown` and `Conflict` remain separate states; conflicts are
+excluded and counted for the first run.
 
+## G1_finding_existence
+
+- Unit: finding existence across the whole image.
+- Evidence: Chest ImaGenome `anatomicalfinding|yes/no|{finding}` assertions from
+  all attribute dictionaries, including attributes without a usable bbox.
 - Positive claim: `There is evidence of {finding} in this chest X-ray.`
 - Negative claim: `There isn't evidence of {finding} in this chest X-ray.`
-
-For G2, replace `in this chest X-ray` with `in the {bbox_name}` and require a
-valid anatomy-bound Chest ImaGenome object bbox.
-
-Label construction:
-
-- If the source relation is `yes`, positive claims are `Supported` and negative
-  claims are `Contradicted`.
-- If the source relation is `no`, positive claims are `Contradicted` and
-  negative claims are `Supported`.
-- Missing evidence is never converted into negative evidence. For unmentioned
-  findings sampled from the fixed Chest ImaGenome anatomical finding
-  vocabulary, both claims are labeled `Not enough evidence`.
-- The first Study 2 pilot samples 2 unmentioned anatomical findings per image
-  for G1 and per eligible anatomy region for G2, using a fixed seed.
-- G1 missing-evidence probes use the fixed global Chest ImaGenome anatomical
-  finding vocabulary.
-- G2 missing-evidence probes use only the same-bbox vocabulary from
-  `bbox_finding_vocab_summary.csv`: findings previously observed with the same
-  `bbox_name`. The builder also excludes findings already mentioned in the
-  current image+bbox and findings that are positive elsewhere in the same
-  image.
-- If `bbox_name_quality_summary.csv` would classify a `bbox_name` as anything
-  other than `use_for_g2`, G2 keeps only explicit yes/no claims for that bbox
-  and does not construct missing-evidence probes.
-
-## MIMIC-CXR
-
-the source dataset
-Based on overlapping MIMIC-CXR studies linked with Chest ImaGenome and RadGraph, we construct a derived multi-granularity experimental subset covering operationalizable parts of G1–G4.
-
----
-
-## Chest ImaGenome
-
-This is the detailed definition of granularity in Chest Imagenome, corresponding dataset fields, evidence sources, sample construction rules, exclusion rules, and example items.
-
----
-
-### G1 (Chest ImaGenome)
-
-Finding Existence refers to image-level existence of a radiological finding or abnormality.
-
-#### dataset mapping (G1)
-
-Scene Graph JSON - attribute dictionary
-
-example
-    - 'attributes': [['anatomicalfinding|no|lung opacity',
-    'anatomicalfinding|no|pneumothorax',
-    'nlp|yes|normal'],
-    ['anatomicalfinding|no|pneumothorax']],
-    - 'attributes_ids': [['CL556823', 'C1963215;;C0032326', 'C1550457'],
-   ['C1963215;;C0032326']],
-
-#### question template (G1)
-
-addition: For G1, we use the `attributes` lists from Chest ImaGenome attribute dictionaries, regardless of whether `bbox_name` is valid or False, because G1 only requires image-level finding existence or absence and does not require anatomy-specific localization.
-for h1:
-Is there evidence of {finding} in this chest X-ray?
-Answer only one of: Yes, No, or Uncertain.
-
-for h2:
-Is the following claim supported by the chest X-ray?
-Claim: There is evidence of {finding}./There isn't evidence of {finding}.
-Answer only one of: Supported, Unsupported, or Uncertain.
-
-#### Construction rule (G1)
-
-For h1: All anatomicalfinding from all attributes in this image.
-
-- Yes: at least one relevant anatomical region has `{anatomicalfinding}|yes|{finding}`.
-- No: no positive evidence conflicts with it, has `{anatomicalfinding}|no|{finding}`.
-- Uncertain: The model cannot make a judgment. Use as abstention.
-- Conflict: both positive and negative assertions exist for the same finding; exclude from the first pilot or send to manual review.
-
-For h2:
-
-- Supported: The anatomicalfinding has been mentioned in this image. 'anatomicalfinding|yes|...' for There is evidence of {finding}. 'anatomicalfinding|no|...' for There isn't evidence of {finding}.
-- Unsupported: The anatomicalfinding hasn't been mentioned in this image. We can't judge.
-- Uncertain: The model can't make a judgement. Use as abstention.
-- Pilot sampling: H2 uses a configurable Unsupported/Supported balance. The first pilot default is 80% Unsupported and 20% Supported, but this is an experimental setting, not a claim that 8/2 is optimal.
-
-#### example (G1)
-
-##### Positive h1 G1
-
-Source assertion:
-`right lower lung zone: anatomicalfinding|yes|lung opacity`
-
-Constructed item:
-    - Granularity: G1_finding_existence
-    - Question: Is there evidence of lung opacity in this chest X-ray?
-    - Answer: Yes
-    - Evidence: At least one anatomical region has `lung opacity=yes`.
-
-##### Negative h1 G1
-
-Source assertion:
-`right lung: anatomicalfinding|no|pneumothorax`
-
-Constructed item:
-    - Granularity: G1_finding_existence
-    - Question: Is there evidence of pneumothorax in this chest X-ray?
-    - Answer: No
-    - Evidence: Explicit negative pneumothorax assertion and no positive pneumothorax assertion.
-
-#### Statistical indicators G1
-
-n_total = total items
-n_abstain = model outputs Uncertain
-n_invalid = invalid responses
-n_answered = n_total - n_abstain - n_invalid
-
-coverage = n_answered / n_total
-abstention_rate = n_abstain / n_total
-answered_accuracy = correct / n_answered
-
-H1_false_positive_count = count(answer_label = No and parsed_answer = Yes)
-
-H1_false_negative_count = count(answer_label = Yes and parsed_answer = No)
-
-H1_count = H1_false_positive_count + H1_false_negative_count
-
-H1_rate_total = H1_count / n_total
-H1_rate_answered = H1_count / n_answered
-
----
-
-### G2 (Chest ImaGenome)
-
-Anatomical Localization refers to anatomy-specific existence of a radiological finding.
-
-#### dataset mapping (G2)
-
-Scene Graph JSON
-objects dictionary
-example (bbox metadata):
-    - ‘bbox_name’: ‘right upper lung zone’,
-    - 'original_x1': 395,
-    - 'original_y1': 532,
-    - 'original_x2': 1255,
-    - 'original_y2': 1268,
-    - 'original_width': 860,
-    - 'original_height': 736
-
-attribute dictionary
-example (attributes list):
-    - 'right lung': True,
-    'bbox_name': 'right lung',
-    'synsets': ['C0225706'],
-    'name': 'Right lung',
-    - 'attributes': [['anatomicalfinding|no|lung opacity',
-    'anatomicalfinding|no|pneumothorax',
-    'nlp|yes|normal'],
-    ['anatomicalfinding|no|pneumothorax']],
-    - 'attributes_ids': [['CL556823', 'C1963215;;C0032326', 'C1550457'],
-    ['C1963215;;C0032326']],
-
-#### question template (G2)
-
-For h1:
-
-- Is there {attributes{findings}} in the {bbox_name} ? Answer only one of: Yes, No, or Uncertain.
-- Where is the {findings} located? A... B... C... D... E.no evidence of the {...}
-- as model could complete bbox grounding task: extension question for (x1, x2, y1, y2)
-
-For h2:
-
-Is the following claim supported by the chest X-ray?
-Claim: There is evidence of {finding} in the {bbox_name}./There isn't evidence of {finding} in the {bbox_name}.
-Answer only one of: Supported, Unsupported, or Uncertain.
-
-#### construction rule (G2)
-
-addition:the key of the first line in attribute dictionary that refers to anatomy name, such as'right lung', need to be True, because False means anatomical location may not always be described or implied in the report, but in G2, we need to focus on the anatomical location level, so the anatomy should be bound to the attribute dictionary.
-
-For h1:
-
-For G2-main yes/no QA
-    - Yes: the target anatomy has `{category}|yes|{finding}`.
-    - No: the target anatomy has explicit `{category}|no|{finding}` and no conflicting positive assertion for the same anatomy-finding pair.
-    - Uncertain: The model cannot make a judgment. Use as abstention.
-    - Conflict: the same anatomy-finding pair has both positive and negative evidence; exclude from pilot or mark for manual review.
-
-For G2-choice:
-    - Construct only when one or more positive anatomy-finding pairs exist.
-    - Candidate choices should be anatomically plausible and preferably symmetric or nearby regions.
-    - Include `no evidence of this finding` only when image-level G1 label is No.
-
-For G2-box:
-    - Use only as an optional grounding probe.
-    - Use `original_x1`, `original_y1`, `original_x2`, `original_y2` as the reference bbox when evaluating on original MIMIC-CXR-JPG images.
-    - Treat this as anatomical-region localization, not lesion segmentation.
-
-For h2:
-
-- Supported: The anatomicalfinding has been mentioned in this attribute. 'anatomicalfinding|yes|...' for There is evidence of {finding} in the {bbox_name}. 'anatomicalfinding|no|...' for There isn't evidence of {finding} in the {bbox_name}.
-- Unsupported: The anatomicalfinding hasn't been mentioned in this attribute. We can't judge.
-- Uncertain: The model can't make a judgement. Use as abstention.
-- Pilot sampling: H2 uses a configurable Unsupported/Supported balance. The first pilot default is 80% Unsupported and 20% Supported, but this is an experimental setting, not a claim that 8/2 is optimal.
-
-#### examples (G2 — anatomical localization)
-
-##### Positive G2 example
-
-Source assertion:
-`right upper lung zone: anatomicalfinding|yes|lung opacity`
-
-Object evidence:
-`bbox_name = right upper lung zone`
-`original_x1 = 395, original_y1 = 532, original_x2 = 1255, original_y2 = 1268`
-
-Constructed item:
-    - Granularity: G2_anatomical_localization
-    - Question: Is there evidence of lung opacity in the right upper lung zone?
-    - Answer: Yes
-    - Evidence: The right upper lung zone has `anatomicalfinding|yes|lung opacity`.
-    - Bbox: anatomical region bbox, not lesion segmentation.
-
-##### Negative G2 example
-
-Source assertion:
-`right lung: anatomicalfinding|no|pneumothorax`
-
-Constructed item:
-    - Granularity: G2_anatomical_localization
-    - Question: Is there evidence of pneumothorax in the right lung?
-    - Answer: No
-    - Evidence: The right lung has `anatomicalfinding|no|pneumothorax`, and no positive pneumothorax assertion conflicts with it.
-
-##### Optional G2-box example
-
-Question:
-Draw a bounding box around the right upper lung zone. Return JSON only:
-{"bbox": [x1, y1, x2, y2]}
-
-Reference:
-`[original_x1, original_y1, original_x2, original_y2]`
-
-Evaluation:
-    - IoU with anatomical bbox;
-    - or center point inside reference bbox;
-    - not used as main G2 hallucination metric.
-
-#### Statistical indicators G2
-
-n_total = total items
-n_abstain = model outputs Uncertain
-n_invalid = invalid responses
-n_answered = n_total - n_abstain - n_invalid
-
-coverage = n_answered / n_total
-abstention_rate = n_abstain / n_total
-answered_accuracy = correct / n_answered
-
-H2_count = count(answer_label = Unsupported and parsed_answer = Supported)
-
-H2_rate_total = H2_count / n_total
-H2_rate_answered = H2_count / n_answered
-
----
-
-### G3 (Chest ImaGenome)
-
-#### G3a: Contrastive finding-anatomy binding
-
-G3a tests whether a model can correctly bind a finding to the intended anatomical region while rejecting an anatomically plausible but incorrect region, is not a simple anatomy-specific assertion, it is a contrastive relation-level probe built from two or more candidate anatomy-finding bindings.
-
-##### Dataset mapping (G3a)
-
-- attribute dictionary: `{category}|yes/no|{finding}`
-- valid `bbox_name`
-- paired or contrastive anatomy candidates
-- optional phrases for report-side evidence
-
-##### Question templates (G3a)
-
-1. Is the {finding} located in the {anatomy_A} rather than the {anatomy_B}?
-2. The {finding} is located in the {anatomy_B}. Is this statement supported by the chest X-ray?
-3. Which anatomical region is more consistent with the {finding}? A. {anatomy_A} B. {anatomy_B} C. no evidence of this finding
-
-##### Construction rule (G3a)
-
-- Positive binding: target anatomy has `{category}|yes|{finding}`.
-- Negative binding: distractor anatomy has `{category}|no|{finding}` or is selected as an anatomically plausible but unsupported contrast region.
-- Prefer symmetric or nearby distractors, such as left/right lung zones or upper/lower lung zones.
-- Exclude cases where both anatomies have positive evidence or where the distractor is ambiguous.
-
-#### G3b: modifier
-
-attribute dictionary:
-'comparison_cues': [[], []],
-'temporal_cues': [[], []],
-'severity_cues': [[], []],
-'texture_cues': [[], []],
-
-##### Construction rule(G3b)
-
-addition:These cue fields are aligned at the phrase / sentence level with the outer lists of `phrases` and `attributes`. Because severity and temporal cues are assigned by sentence-level co-occurrence, they are treated as weak/silver evidence and require phrase-level validation.
-
-- Use only positive finding assertions, e.g. `{category}|yes|{finding}`
-- The corresponding cue list must be non-empty.
-- The supporting phrase must contain both the target finding and the modifier cue.
-- Exclude negated findings.
-- Exclude cases where multiple findings in the same phrase make modifier binding ambiguous.
-- Treat all G3b items as weak/silver evidence unless manually validated.
-
-### G4 — structured synthesis (Chest ImaGenome)
-
-G4 refers to image-level or report-level synthesis based on multiple localized findings. In Chest ImaGenome, G4 is treated only as a structured synthesis proxy, not definitive clinical diagnosis.
-
----
-
-## RadGraph
-
-RadGraph is used as report-side structured evidence, not direct visual ground truth.
-
-### Schema
-
-Entities:
-    - ANAT: Anatomy
-    - OBS-DP: Observation Definitely Present
-    - OBS-U: Observation Uncertain
-    - OBS-DA: Observation Definitely Absent
-
-### G1 (RadGraph)
-
-- OBS-DP -> Yes
-- OBS-DA -> No
-- OBS-U -> Uncertain, excluded from binary clean QA
-
-### G2 (RadGraph)
-
-- Use `located_at(Observation, Anatomy)` as report-side localization evidence.
-- This is E3 report-side localization evidence, not bbox or segmentation.
-
-### G3 (RadGraph)
-
-- `modify(Observation, Observation)` or `modify(Anatomy, Anatomy)` -> candidate modifier evidence.
-- `suggestive_of(Observation, Observation)` -> candidate higher-level inference evidence, reserved for G4 proxy or diagnostic synthesis analysis.
-
-## Evidence Source Mapping
-
-| Granularity | Chest ImaGenome Evidence | RadGraph Evidence | Evidence level |
-| --- | --- | --- | --- |
-| G1 | attribute `{category}\|yes/no\|finding` | OBS-DP / OBS-DA | E2 / E3 |
-| G2 | valid `bbox_name` + anatomy-specific attribute | located_at(Observation, Anatomy) | E1 + E2 / E3 |
-| G3a | contrastive anatomy-finding binding | located_at contrast | E2 / E3 |
-| G3b | severity/temporal/texture/comparison cues + phrases | modify relation | weak E3 |
-| G4 | aggregated localized findings | aggregated report graph / suggestive_of | E3 proxy |
+- Missing probes: sample two findings per image from the fixed Chest ImaGenome
+  anatomical-finding vocabulary with seed 42, excluding findings mentioned in
+  the image.
+
+## G2_anatomical_localization
+
+- Unit: finding existence in one named anatomy region.
+- Evidence requires `anatomy_bound=True`, a real `bbox_name`, and a matching
+  Chest ImaGenome object bbox. `bbox_name=False` is never localization evidence;
+  an anatomical bbox is not a lesion segmentation.
+- Positive claim: `There is evidence of {finding} in the {bbox_name}.`
+- Negative claim: `There isn't evidence of {finding} in the {bbox_name}.`
+- Missing probes use only findings previously observed for the same `bbox_name`
+  in `bbox_finding_vocab_summary.csv`.
+- Exclude findings mentioned in the current image+bbox and findings positive
+  elsewhere in the same image.
+- Create missing probes only when the bbox audit recommendation is `use_for_g2`.
+  Bboxes marked `use_explicit_only`, `review`, or `drop_for_g2` may retain valid
+  explicit claims but receive no missing probes.
+
+## Scoring interpretation
+
+- Ground truth Contradicted, model Supported: `H1_evidence_contradicted`.
+- Ground truth Not enough evidence, model Supported:
+  `H2_evidence_unsupported`.
+- Other wrong ABC answers: `incorrect_non_hallucination`.
+- Empty, unparsable, or multiple answers: `invalid_response`; these are reported
+  separately and are not infrastructure failures.
+
+Aggregate results are reported overall and by granularity, claim polarity,
+evidence state, ground-truth label, and parsed answer.
+
+## Reserved taxonomy
+
+`G3a_contrastive_finding_anatomy_binding`,
+`G3b_modifier_characterization`, `G3c_temporal_or_comparison_relation`, and
+`G4_structured_synthesis_proxy` remain defined research directions but are not
+implemented or run in this migration.

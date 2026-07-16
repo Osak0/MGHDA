@@ -306,22 +306,7 @@ structured_summary
 
 ### Allowed `answer_label` values
 
-For closed QA:
-
-```text
-Yes
-No
-Uncertain
-Supported
-Unsupported
-A
-B
-C
-D
-E
-```
-
-For Study 2 claim verification:
+For the current Study 2 claim-verification experiment:
 
 ```text
 Supported
@@ -413,7 +398,7 @@ Required fields:
 | Field | Type | Description |
 | --- | --- | --- |
 | `item_id` | string | Item ID used to join back to metadata. |
-| `image_path` | string | Local image path used by the model runner. |
+| `image_path` | string | Portable private path under `data/files/`. |
 | `prompt_template_id` | string | Prompt template ID. |
 | `prompt` | string | Full text prompt sent to the model. |
 
@@ -434,6 +419,8 @@ Required fields:
 | `hallucination_probe` | string/null | `H1`, `H2`, or null. |
 | `target_finding` | string/null | Target finding. |
 | `target_anatomy` | string/null | Target anatomy. |
+| `claim_polarity` | string | `positive` or `negative`. |
+| `evidence_state` | string | `affirmed`, `negated`, or `not_enough_evidence`. |
 | `evidence_sources` | list[string] | Evidence source types. |
 
 Model outputs should be saved separately from model-ready items.
@@ -457,7 +444,7 @@ outputs/raw_responses/{model_name}_{split}.jsonl
 | `prompt_template_id` | string/null | Prompt template ID.                                   |
 | `prompt`             | string      | Actual prompt sent to the model.                      |
 | `raw_response`       | string      | Original unmodified model output.                     |
-| `parsed_answer`      | string/null | Parsed answer, such as `Yes`, `No`, `Supported`, `Unsupported`, or `Uncertain`. |
+| `parsed_answer`      | string/null | Parsed Study 2 answer: `Supported`, `Contradicted`, or `Not enough evidence`. |
 | `parse_status`       | string      | Status of answer parsing.                             |
 | `generation_config`  | object      | Decoding configuration.                               |
 | `runtime`            | object      | Runtime metadata.                                     |
@@ -476,18 +463,18 @@ requires_manual_review
 
 ```json
 {
-  "item_id": "ci_g2_000001",
-  "model_name": "qwen3-vl-4b-instruct",
-  "model_version": "model-card-or-commit",
-  "image_path": "data/raw/mimic-cxr-jpg/files/p10/p10000032/s50414267/02aa804e-bde0afdd-112c0b34-7bc16630-4e384014.jpg",
-  "prompt_template_id": "yes_no_v1",
-  "prompt": "You are given a chest X-ray. Answer only one of: Yes, No, or Uncertain. Question: Is there evidence of pneumothorax in the right lung?",
-  "raw_response": "Yes, there is evidence of pneumothorax in the right lung.",
-  "parsed_answer": "Yes",
+  "item_id": "study2_g2_example",
+  "model_name": "medgemma",
+  "model_version": "local-medgemma-4b-it",
+  "image_path": "data/files/synthetic/example.jpg",
+  "prompt_template_id": "claim_verification_abc_v1",
+  "prompt": "Evaluate the claim from the visible radiographic evidence. Return only A, B, or C.",
+  "raw_response": "A",
+  "parsed_answer": "Supported",
   "parse_status": "success",
   "generation_config": {
     "temperature": 0.0,
-    "max_new_tokens": 64,
+    "max_new_tokens": 16,
     "seed": 42
   },
   "runtime": {
@@ -578,36 +565,19 @@ S-1_contradicted
 U_uncertain
 ```
 
-### Basic scoring rule for closed Yes/No QA
+### Study 2 scoring rule
 
-| Ground truth     | Parsed answer | Default score                                |
-| ---------------- | ------------- | -------------------------------------------- |
-| `Yes`            | `Yes`         | `correct`                                    |
-| `No`             | `No`          | `correct`                                    |
-| `Yes`            | `No`          | `H1_evidence_contradicted`                   |
-| `No`             | `Yes`         | `H1_evidence_contradicted`                   |
-| `Uncertain`      | `Yes` or `No` | `requires_manual_review` or `uncertain_case` |
-| `Yes` or `No`    | `Uncertain`   | `uncertain_or_abstention`                    |
-| invalid response | any           | `invalid_response`                           |
+| Ground truth | Parsed answer | Default score |
+| --- | --- | --- |
+| any ABC label | same label | `correct` |
+| `Contradicted` | `Supported` | `H1_evidence_contradicted` |
+| `Not enough evidence` | `Supported` | `H2_evidence_unsupported` |
+| any other different ABC label | another ABC label | `incorrect_non_hallucination` |
+| any | empty, invalid, or multiple answers | `invalid_response` |
 
-### Basic scoring rule for claim-support QA
-
-| Ground truth  | Parsed answer | Default score                 |
-| ------------- | ------------- | ----------------------------- |
-| `Supported`   | `Supported`   | `correct`                     |
-| `Unsupported` | `Unsupported` | `correct`                     |
-| `Unsupported` | `Supported`   | `H2_evidence_unsupported`     |
-| `Supported`   | `Unsupported` | `incorrect_non_hallucination` |
-| `Supported` or `Unsupported` | `Uncertain` | `uncertain_or_abstention` |
-| invalid response | any        | `invalid_response`            |
-
-### H2 pilot sampling
-
-H2 item builders support configurable downsampling of `Supported` and
-`Unsupported` claims. The first pilot default targets 80% `Unsupported` and
-20% `Supported`, but this is an experiment setting rather than an optimal test
-set definition. Scripts should expose the target fraction and seed so later
-sensitivity analyses can rerun with different ratios.
+The optimized reference run samples two missing findings with seed 42. G2
+sampling is same-bbox scoped and is gated by aggregate bbox quality; it does not
+use an 80/20 Supported/Unsupported ratio.
 
 ### Examples
 

@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${MGHDA_ROOT:=/xjtu-mlp-vepfs/wangruiyang/MGHDA}"
-: "${MGHDA_DATA_ROOT:=/xjtu-mlp-vepfs/wangruiyang/MGHDA-data}"
-: "${MGHDA_MODEL_ROOT:=/xjtu-mlp-vepfs/wangruiyang/models}"
-: "${MEDGEMMA_MODEL_PATH:=$MGHDA_MODEL_ROOT/google/medgemma-4b-it}"
+source "$(dirname "$0")/lib/study2_env.sh"
+require_env MGHDA_DATA_ROOT
+require_env MEDGEMMA_MODEL_PATH
 
 cd "$MGHDA_ROOT"
-export PYTHONPATH="$MGHDA_ROOT/src"
-
 mkdir -p "$MGHDA_DATA_ROOT/outputs/audits"
 
 for split in study2_g1 study2_g2; do

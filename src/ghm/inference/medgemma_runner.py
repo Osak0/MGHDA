@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -136,6 +137,9 @@ def run_medgemma(
     max_new_tokens: int,
     temperature: float,
     limit: int | None,
+    seed: int = 42,
+    checkpoint_path: Path | None = None,
+    resume: bool = False,
 ) -> list[dict[str, Any]]:
     """Run MedGemma generation and return raw response rows."""
 
@@ -161,6 +165,7 @@ def run_medgemma(
     if device in {"cuda", "cpu"}:
         model.to(device)
     model.eval()
+    _seed_torch(torch, seed)
 
     metadata_index = metadata_by_item_id(eval_metadata_rows)
     selected_records = prompt_records[:limit] if limit is not None else prompt_records
@@ -171,16 +176,25 @@ def run_medgemma(
         "batch_size": batch_size,
         "max_new_tokens": max_new_tokens,
         "temperature": temperature,
+        "seed": seed,
     }
+    checkpoint_rows = _latest_rows_by_item_id(checkpoint_path) if resume else {}
+    if checkpoint_path is not None and not resume:
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        checkpoint_path.write_text("", encoding="utf-8")
     outputs: list[dict[str, Any]] = []
 
     for index, record in enumerate(selected_records, start=1):
+        item_id = str(record.get("item_id"))
+        previous = checkpoint_rows.get(item_id)
+        if previous is not None and previous.get("runtime", {}).get("status") == "success":
+            outputs.append(previous)
+            continue
         started = time.time()
         metadata = metadata_index.get(str(record.get("item_id")), {})
         image_path = resolve_image_path(record.get("image_path"), data_root)
         if image_path is None:
-            outputs.append(
-                build_error_row(
+            row = build_error_row(
                     record,
                     metadata,
                     model_name=model_name,
@@ -189,11 +203,11 @@ def run_medgemma(
                     error_type="missing_image_path",
                     error_message="image_path is missing",
                 )
-            )
+            outputs.append(row)
+            _append_checkpoint(checkpoint_path, row)
             continue
         if not image_path.exists():
-            outputs.append(
-                build_error_row(
+            row = build_error_row(
                     record,
                     metadata,
                     model_name=model_name,
@@ -202,7 +216,8 @@ def run_medgemma(
                     error_type="image_not_found",
                     error_message="resolved image path does not exist",
                 )
-            )
+            outputs.append(row)
+            _append_checkpoint(checkpoint_path, row)
             continue
 
         try:
@@ -216,8 +231,7 @@ def run_medgemma(
                 temperature=temperature,
                 torch_dtype=torch_dtype,
             )
-            outputs.append(
-                {
+            row = {
                     "item_id": record.get("item_id"),
                     "model_name": model_name,
                     "model_version": str(model_path),
@@ -242,10 +256,10 @@ def run_medgemma(
                     "claim_polarity": metadata.get("claim_polarity"),
                     "evidence_state": metadata.get("evidence_state"),
                 }
-            )
+            outputs.append(row)
+            _append_checkpoint(checkpoint_path, row)
         except Exception as exc:  # noqa: BLE001 - keep batch robust on remote runs.
-            outputs.append(
-                build_error_row(
+            row = build_error_row(
                     record,
                     metadata,
                     model_name=model_name,
@@ -254,9 +268,43 @@ def run_medgemma(
                     error_type=exc.__class__.__name__,
                     error_message=str(exc)[:500],
                 )
-            )
+            outputs.append(row)
+            _append_checkpoint(checkpoint_path, row)
 
+    if checkpoint_path is not None:
+        write_jsonl(outputs, checkpoint_path)
     return outputs
+
+
+def _append_checkpoint(path: Path | None, row: dict[str, Any]) -> None:
+    """Durably append one completed attempt to the private checkpoint journal."""
+
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as file:
+        file.write(json.dumps(row, ensure_ascii=False, sort_keys=True))
+        file.write("\n")
+        file.flush()
+        os.fsync(file.fileno())
+
+
+def _latest_rows_by_item_id(path: Path | None) -> dict[str, dict[str, Any]]:
+    """Load the latest checkpoint attempt for every item."""
+
+    if path is None or not path.is_file():
+        return {}
+    rows: dict[str, dict[str, Any]] = {}
+    for row in read_jsonl(path):
+        if row.get("item_id") is not None:
+            rows[str(row["item_id"])] = row
+    return rows
+
+
+def _seed_torch(torch: Any, seed: int) -> None:
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 
 def generate_one(
@@ -325,6 +373,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--max-new-tokens", type=int, default=16)
     parser.add_argument("--temperature", type=float, default=0.0)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        default=None,
+        help="Private per-item checkpoint journal used for interruption recovery.",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Reuse successful rows from --checkpoint and retry failed rows.",
+    )
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument(
         "--dry-run",
@@ -341,6 +401,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--max-new-tokens must be positive.")
     if args.temperature < 0:
         parser.error("--temperature must be non-negative.")
+    if args.resume and args.checkpoint is None:
+        parser.error("--resume requires --checkpoint.")
 
     prompt_records = read_jsonl(args.input)
     eval_metadata_rows = read_jsonl(args.eval_metadata)
@@ -376,6 +438,9 @@ def main(argv: list[str] | None = None) -> int:
             max_new_tokens=args.max_new_tokens,
             temperature=args.temperature,
             limit=None,
+            seed=args.seed,
+            checkpoint_path=args.checkpoint,
+            resume=args.resume,
         )
     except (RuntimeError, ValueError) as exc:
         parser.exit(status=1, message=f"error: {exc}\n")

@@ -1,5 +1,6 @@
 pyarrow
 transformers==4.50.3
 pillow
-accelerate
+accelerate==1.13.0
 matplotlib
+pytest
