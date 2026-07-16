@@ -4,7 +4,12 @@ from pathlib import Path
 from ghm.evaluation.validate_run import validate_run_layers
 from ghm.granularity.common import read_jsonl, write_jsonl
 from ghm.inference.medgemma_runner import _append_checkpoint, _latest_rows_by_item_id
-from ghm.migration.bundle import create_bundle, verify_bundle
+from ghm.migration.bundle import (
+    create_bundle,
+    create_transfer_manifest,
+    verify_bundle,
+    verify_checksum_file,
+)
 from ghm.migration.preflight import collect_preflight
 
 
@@ -17,15 +22,15 @@ def test_root_data_ignore_does_not_hide_source_package():
 
 def test_bundle_copies_deduplicated_images_and_verifies_sha256(tmp_path):
     data_root = tmp_path / "private-data"
-    image = data_root / "data/files/p10/p100/s500/image.jpg"
+    image = data_root / "files/p10/p100/s500/image.jpg"
     image.parent.mkdir(parents=True)
     image.write_bytes(b"synthetic-image")
     prompt_path = data_root / "prompts/study2_g1_model_inputs.jsonl"
     metadata_path = data_root / "prompts/study2_g1_eval_metadata.jsonl"
     write_jsonl(
         [
-            _prompt("a", "data/files/p10/p100/s500/image.jpg"),
-            _prompt("b", "data/files/p10/p100/s500/image.jpg"),
+            _prompt("a", "files/p10/p100/s500/image.jpg"),
+            _prompt("b", "files/p10/p100/s500/image.jpg"),
         ],
         prompt_path,
     )
@@ -42,7 +47,7 @@ def test_bundle_copies_deduplicated_images_and_verifies_sha256(tmp_path):
 
     assert summary["model_input_records"] == 2
     assert summary["unique_images"] == 1
-    assert (bundle / "data/files/p10/p100/s500/image.jpg").read_bytes() == b"synthetic-image"
+    assert (bundle / "files/p10/p100/s500/image.jpg").read_bytes() == b"synthetic-image"
     assert verify_bundle(bundle)["failed_files"] == 0
     manifest = json.loads((bundle / "bundle_manifest.json").read_text(encoding="utf-8"))
     assert "data_root" not in manifest
@@ -51,12 +56,12 @@ def test_bundle_copies_deduplicated_images_and_verifies_sha256(tmp_path):
 
 def test_bundle_verification_detects_corruption(tmp_path):
     data_root = tmp_path / "private-data"
-    image = data_root / "data/files/image.jpg"
+    image = data_root / "files/image.jpg"
     image.parent.mkdir(parents=True)
     image.write_bytes(b"original")
     prompt_path = tmp_path / "inputs.jsonl"
     metadata_path = tmp_path / "metadata.jsonl"
-    write_jsonl([_prompt("a", "data/files/image.jpg")], prompt_path)
+    write_jsonl([_prompt("a", "files/image.jpg")], prompt_path)
     write_jsonl([_metadata("a")], metadata_path)
     bundle = tmp_path / "bundle"
     create_bundle(
@@ -67,7 +72,7 @@ def test_bundle_verification_detects_corruption(tmp_path):
         git_commit=None,
     )
 
-    (bundle / "data/files/image.jpg").write_bytes(b"corrupt")
+    (bundle / "files/image.jpg").write_bytes(b"corrupt")
 
     assert verify_bundle(bundle)["failed_files"] == 1
 
@@ -86,7 +91,7 @@ def test_checkpoint_keeps_latest_attempt_and_is_resume_ready(tmp_path):
 
 
 def test_run_validation_separates_model_invalids_from_infrastructure_failures():
-    prompts = [_prompt("a", "data/files/image.jpg")]
+    prompts = [_prompt("a", "files/image.jpg")]
     metadata = [_metadata("a")]
     raw = [_raw("a", status="success")]
     parsed = [{**raw[0], "parse_status": "invalid_format", "parsed_answer": None}]
@@ -106,7 +111,7 @@ def test_run_validation_separates_model_invalids_from_infrastructure_failures():
 
 
 def test_run_validation_rejects_missing_and_duplicate_rows():
-    prompts = [_prompt("a", "data/files/image.jpg")]
+    prompts = [_prompt("a", "files/image.jpg")]
     metadata = [_metadata("a")]
     raw = [_raw("a", status="success"), _raw("a", status="success")]
 
@@ -133,6 +138,40 @@ def test_preflight_fails_closed_when_model_is_absent(tmp_path):
     assert "model_directory_missing" in result["failures"]
     assert "data_root" not in result
     assert "model_path" not in result
+
+
+def test_in_place_transfer_manifest_creates_no_image_copy(tmp_path):
+    data_root = tmp_path / "data"
+    image = data_root / "files/image.jpg"
+    prompts = data_root / "processed/prompts"
+    image.parent.mkdir(parents=True)
+    prompts.mkdir(parents=True)
+    image.write_bytes(b"only-original")
+    model_path = prompts / "study2_g1_model_inputs.jsonl"
+    metadata_path = prompts / "study2_g1_eval_metadata.jsonl"
+    write_jsonl([_prompt("a", "files/image.jpg")], model_path)
+    write_jsonl([_metadata("a")], metadata_path)
+    transfer_dir = data_root / "outputs/transfer"
+
+    summary = create_transfer_manifest(
+        data_root=data_root,
+        output_dir=transfer_dir,
+        model_input_paths=[model_path],
+        eval_metadata_paths=[metadata_path],
+        git_commit="abc123",
+    )
+
+    assert summary["copies_created"] == 0
+    assert summary["unique_images"] == 1
+    assert list(data_root.rglob("image.jpg")) == [image]
+    result = verify_checksum_file(
+        data_root=data_root,
+        checksum_path=transfer_dir / "study2_files.sha256",
+    )
+    assert result == {"checked_files": 3, "failed_files": 0}
+    files_from = (transfer_dir / "study2_files_from.txt").read_text(encoding="utf-8")
+    assert "files/image.jpg" in files_from
+    assert "processed/prompts/study2_g1_model_inputs.jsonl" in files_from
 
 
 def _prompt(item_id, image_path):

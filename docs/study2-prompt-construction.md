@@ -51,3 +51,5 @@ Model-input JSONL contains only `item_id`, `image_path`, `prompt_template_id`,
 and `prompt`. Ground-truth labels and structured evidence are stored separately
 in eval-metadata JSONL and joined by `item_id`. Both files and all image paths
 are restricted experiment artifacts and must never be committed to Git.
+`image_path` is portable and relative to `MGHDA_DATA_ROOT`, for example
+`files/p10/.../image.jpg`.

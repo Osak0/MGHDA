@@ -248,19 +248,19 @@ Each item corresponds to one image-question-answer instance.
 Recommended file path:
 
 ```text
-data/processed/items/{granularity}_{hallucination_probe}_items.jsonl
+processed/items/{granularity}_{hallucination_probe}_items.jsonl
 ```
 
 Example files:
 
 ```text
-data/processed/items/g1_h1_items.jsonl
-data/processed/items/g1_h2_items.jsonl
-data/processed/items/g2_h1_items.jsonl
-data/processed/items/g2_h2_items.jsonl
-data/processed/items/g3a_items.jsonl
-data/processed/items/g3b_items.jsonl
-data/processed/items/g4_proxy_items.jsonl
+processed/items/g1_h1_items.jsonl
+processed/items/g1_h2_items.jsonl
+processed/items/g2_h1_items.jsonl
+processed/items/g2_h2_items.jsonl
+processed/items/g3a_items.jsonl
+processed/items/g3b_items.jsonl
+processed/items/g4_proxy_items.jsonl
 ```
 
 ### Required fields
@@ -331,10 +331,10 @@ For G4 structured synthesis proxy, `answer_label` can be `null`, and the item sh
 {
   "item_id": "ci_g2_000001",
   "source_dataset": "ChestImaGenome",
-  "patient_id": "10000032",
-  "study_id": "50414267",
-  "image_id": "02aa804e-bde0afdd-112c0b34-7bc16630-4e384014",
-  "image_path": "data/raw/mimic-cxr-jpg/files/p10/p10000032/s50414267/02aa804e-bde0afdd-112c0b34-7bc16630-4e384014.jpg",
+  "patient_id": "synthetic-patient",
+  "study_id": "synthetic-study",
+  "image_id": "synthetic-image",
+  "image_path": "files/synthetic/example.jpg",
   "granularity": "G2_anatomical_localization",
   "question_type": "clean_direct_qa",
   "question": "Is there evidence of pneumothorax in the right lung?",
@@ -390,7 +390,7 @@ ground-truth labels.
 Model input file:
 
 ```text
-data/processed/prompts/{split}_model_inputs.jsonl
+processed/prompts/{split}_model_inputs.jsonl
 ```
 
 Required fields:
@@ -398,14 +398,14 @@ Required fields:
 | Field | Type | Description |
 | --- | --- | --- |
 | `item_id` | string | Item ID used to join back to metadata. |
-| `image_path` | string | Portable private path under `data/files/`. |
+| `image_path` | string | Portable path relative to `MGHDA_DATA_ROOT`, under `files/`. |
 | `prompt_template_id` | string | Prompt template ID. |
 | `prompt` | string | Full text prompt sent to the model. |
 
 Evaluation metadata file:
 
 ```text
-data/processed/prompts/{split}_eval_metadata.jsonl
+processed/prompts/{split}_eval_metadata.jsonl
 ```
 
 Required fields:
@@ -466,7 +466,7 @@ requires_manual_review
   "item_id": "study2_g2_example",
   "model_name": "medgemma",
   "model_version": "local-medgemma-4b-it",
-  "image_path": "data/files/synthetic/example.jpg",
+  "image_path": "files/synthetic/example.jpg",
   "prompt_template_id": "claim_verification_abc_v1",
   "prompt": "Evaluate the claim from the visible radiographic evidence. Return only A, B, or C.",
   "raw_response": "A",

@@ -142,13 +142,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--objects",
         type=Path,
-        default=Path("data/interim/ci_objects.parquet"),
+        default=Path("interim/ci_objects.parquet"),
         help="Chest ImaGenome object table parquet.",
     )
     parser.add_argument(
         "--assertions",
         type=Path,
-        default=Path("data/interim/ci_attribute_assertions.parquet"),
+        default=Path("interim/ci_attribute_assertions.parquet"),
         help="Chest ImaGenome attribute assertion table parquet.",
     )
     parser.add_argument(

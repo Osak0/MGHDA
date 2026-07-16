@@ -142,7 +142,7 @@ def test_failed_download_status_excludes_linked_items():
             "study_id": "50414267",
             "dicom_id": "dicom-a",
             "image_id": "dicom-a",
-            "image_path": "data/files/p10/p10000032/s50414267/dicom-a.jpg",
+            "image_path": "files/p10/p10000032/s50414267/dicom-a.jpg",
             "download_status": "failed",
         }
     ]

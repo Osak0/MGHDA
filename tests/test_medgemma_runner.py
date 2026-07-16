@@ -16,11 +16,11 @@ from ghm.granularity.study2 import (
 
 
 def test_resolve_image_path_maps_relative_prompt_path_to_data_root(tmp_path):
-    data_root = tmp_path / "MGHDA-data"
+    data_root = tmp_path / "data"
 
-    resolved = resolve_image_path("data/files/p10/p100/s500/dicom.jpg", data_root)
+    resolved = resolve_image_path("files/p10/p100/s500/dicom.jpg", data_root)
 
-    assert resolved == data_root / "data/files/p10/p100/s500/dicom.jpg"
+    assert resolved == data_root / "files/p10/p100/s500/dicom.jpg"
 
 
 def test_resolve_image_path_keeps_absolute_path(tmp_path):
@@ -30,20 +30,20 @@ def test_resolve_image_path_keeps_absolute_path(tmp_path):
 
 
 def test_dry_run_counts_existing_images_and_metadata(tmp_path):
-    data_root = tmp_path / "MGHDA-data"
-    image_path = data_root / "data/files/p10/p100/s500/dicom.jpg"
+    data_root = tmp_path / "data"
+    image_path = data_root / "files/p10/p100/s500/dicom.jpg"
     image_path.parent.mkdir(parents=True)
     image_path.write_bytes(b"synthetic")
     prompts = [
         {
             "item_id": "a",
-            "image_path": "data/files/p10/p100/s500/dicom.jpg",
+            "image_path": "files/p10/p100/s500/dicom.jpg",
             "prompt_template_id": PROMPT_TEMPLATE_ID,
             "prompt": "Question",
         },
         {
             "item_id": "b",
-            "image_path": "data/files/missing.jpg",
+            "image_path": "files/missing.jpg",
             "prompt_template_id": PROMPT_TEMPLATE_ID,
             "prompt": "Question",
         },
@@ -78,7 +78,7 @@ def test_dry_run_counts_existing_images_and_metadata(tmp_path):
 def test_error_row_preserves_eval_metadata_but_not_model_answer_in_prompt():
     record = {
         "item_id": "a",
-        "image_path": "data/files/missing.jpg",
+        "image_path": "files/missing.jpg",
         "prompt_template_id": PROMPT_TEMPLATE_ID,
         "prompt": "Question",
     }

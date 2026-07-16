@@ -25,30 +25,30 @@ from ghm.granularity.common import read_jsonl, update_summary, write_jsonl, writ
 DEFAULT_BASE_URL = "https://physionet.org/files/mimic-cxr-jpg/2.0.0/files"
 
 DEFAULT_ITEM_FILES = {
-    "g1_h1": Path("data/processed/items/g1_h1_items.jsonl"),
-    "g1_h2": Path("data/processed/items/g1_h2_items.jsonl"),
-    "g2_h1": Path("data/processed/items/g2_h1_items.jsonl"),
-    "g2_h2": Path("data/processed/items/g2_h2_items.jsonl"),
+    "g1_h1": Path("processed/items/g1_h1_items.jsonl"),
+    "g1_h2": Path("processed/items/g1_h2_items.jsonl"),
+    "g2_h1": Path("processed/items/g2_h1_items.jsonl"),
+    "g2_h2": Path("processed/items/g2_h2_items.jsonl"),
 }
 
 DEFAULT_LINKED_ITEM_FILES = {
-    "g1_h1": Path("data/processed/items/g1_h1_items_linked.jsonl"),
-    "g1_h2": Path("data/processed/items/g1_h2_items_linked.jsonl"),
-    "g2_h1": Path("data/processed/items/g2_h1_items_linked.jsonl"),
-    "g2_h2": Path("data/processed/items/g2_h2_items_linked.jsonl"),
+    "g1_h1": Path("processed/items/g1_h1_items_linked.jsonl"),
+    "g1_h2": Path("processed/items/g1_h2_items_linked.jsonl"),
+    "g2_h1": Path("processed/items/g2_h1_items_linked.jsonl"),
+    "g2_h2": Path("processed/items/g2_h2_items_linked.jsonl"),
 }
 
 DEFAULT_STUDY2_ITEM_FILES = {
-    "study2_g1": Path("data/processed/items/study2_g1_claim_verification_items.jsonl"),
-    "study2_g2": Path("data/processed/items/study2_g2_claim_verification_items.jsonl"),
+    "study2_g1": Path("processed/items/study2_g1_claim_verification_items.jsonl"),
+    "study2_g2": Path("processed/items/study2_g2_claim_verification_items.jsonl"),
 }
 
 DEFAULT_STUDY2_LINKED_ITEM_FILES = {
     "study2_g1": Path(
-        "data/processed/items/study2_g1_claim_verification_items_linked.jsonl"
+        "processed/items/study2_g1_claim_verification_items_linked.jsonl"
     ),
     "study2_g2": Path(
-        "data/processed/items/study2_g2_claim_verification_items_linked.jsonl"
+        "processed/items/study2_g2_claim_verification_items_linked.jsonl"
     ),
 }
 
@@ -138,6 +138,7 @@ def build_link_rows(
     *,
     files_root: Path,
     base_url: str,
+    image_path_root: Path = Path("files"),
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Build local image paths and source URLs for needed images."""
 
@@ -170,6 +171,7 @@ def build_link_rows(
                     "subject_id": None,
                     "split": None,
                     "image_path": None,
+                    "_local_image_path": None,
                     "relative_path": None,
                     "source_url": None,
                     "link_status": link_status,
@@ -183,7 +185,8 @@ def build_link_rows(
             study_id=metadata_row["study_id"],
             dicom_id=metadata_row["dicom_id"],
         )
-        image_path = files_root / relative_path
+        local_image_path = files_root / relative_path
+        image_path = image_path_root / relative_path
         source_url = join_url(base_url, relative_path.as_posix())
         rows.append(
             {
@@ -194,6 +197,7 @@ def build_link_rows(
                 "subject_id": metadata_row["subject_id"],
                 "split": metadata_row.get("split"),
                 "image_path": str(image_path),
+                "_local_image_path": str(local_image_path),
                 "relative_path": relative_path.as_posix(),
                 "source_url": source_url,
                 "link_status": "matched",
@@ -277,7 +281,7 @@ def download_manifest_rows(
             manifest_rows.append(manifest_row)
             continue
 
-        image_path = Path(str(row["image_path"]))
+        image_path = Path(str(row.get("_local_image_path") or row["image_path"]))
         source_url = str(row["source_url"])
         if dry_run:
             manifest_row["download_status"] = "dry_run"
@@ -441,8 +445,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--files-root",
         type=Path,
-        default=Path("data/files"),
+        default=Path("files"),
         help="Local root for downloaded MIMIC-CXR-JPG images.",
+    )
+    parser.add_argument(
+        "--image-path-root",
+        type=Path,
+        default=Path("files"),
+        help="Portable data-root-relative prefix stored in linked items.",
     )
     parser.add_argument(
         "--base-url",
@@ -452,19 +462,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--needed-index",
         type=Path,
-        default=Path("data/interim/needed_mimic_jpg_index.parquet"),
+        default=Path("interim/needed_mimic_jpg_index.parquet"),
         help="Output Parquet index of needed images.",
     )
     parser.add_argument(
         "--manifest",
         type=Path,
-        default=Path("data/interim/needed_mimic_jpg_download_manifest.csv"),
+        default=Path("interim/needed_mimic_jpg_download_manifest.csv"),
         help="Output CSV download manifest.",
     )
     parser.add_argument(
         "--url-list",
         type=Path,
-        default=Path("data/interim/needed_mimic_jpg_urls.txt"),
+        default=Path("interim/needed_mimic_jpg_urls.txt"),
         help="Output URL list for wget -i partial downloads.",
     )
     parser.add_argument("--g1-h1-output", type=Path, default=DEFAULT_LINKED_ITEM_FILES["g1_h1"])
@@ -554,6 +564,7 @@ def main(argv: list[str] | None = None) -> int:
         metadata,
         files_root=args.files_root,
         base_url=args.base_url,
+        image_path_root=args.image_path_root,
     )
     try:
         manifest_rows, download_summary = download_manifest_rows(
