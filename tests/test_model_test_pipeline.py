@@ -141,7 +141,7 @@ def _linked_item(
     granularity="G1_finding_existence",
     claim_polarity=CLAIM_POSITIVE,
     evidence_state=EVIDENCE_AFFIRMED,
-    image_path="data/files/p10/p10000032/s50000001/dicom-a.jpg",
+    image_path="files/p10/p10000032/s50000001/dicom-a.jpg",
 ):
     return {
         "item_id": item_id,

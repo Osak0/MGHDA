@@ -247,22 +247,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--attributes",
         type=Path,
-        default=Path("data/interim/ci_attribute_assertions.parquet"),
+        default=Path("interim/ci_attribute_assertions.parquet"),
     )
     parser.add_argument(
         "--objects",
         type=Path,
-        default=Path("data/interim/ci_objects.parquet"),
+        default=Path("interim/ci_objects.parquet"),
     )
     parser.add_argument(
         "--image-index",
         type=Path,
-        default=Path("data/interim/image_index.parquet"),
+        default=Path("interim/image_index.parquet"),
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("data/processed/items/study2_g2_claim_verification_items.jsonl"),
+        default=Path("processed/items/study2_g2_claim_verification_items.jsonl"),
     )
     parser.add_argument(
         "--summary",

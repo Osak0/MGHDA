@@ -20,39 +20,59 @@ src/ghm/granularity/     optimized G1/G2 item construction
 src/ghm/prompts/         separated model-input/eval-metadata prompt builder
 src/ghm/inference/       MedGemma runner
 src/ghm/evaluation/      parsing, scoring, validation, and visualization
-src/ghm/migration/       preflight and private-bundle utilities
+src/ghm/migration/       preflight and direct-transfer utilities
 tests/                   synthetic tests only
 ```
 
-## Configure
+## Current Windows data machine
 
-```bash
-cp configs/study2_medgemma.env.example configs/study2_medgemma.env
-# Edit the private paths in configs/study2_medgemma.env.
+The data root is the existing `C:\Users\24540\data` directory. It directly
+contains `interim`, `processed`, `files`, `outputs`, and `raw`; scripts must not
+append another `data` component and do not require an `MGHDA-private` directory.
+
+From PowerShell, after creating a Python 3.10/3.11 environment with the project
+dependencies, run:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+$env:MGHDA_PYTHON = "C:\path\to\python.exe" # omit when .venv exists
+.\scripts\00_audit_schema.ps1
+.\scripts\01_build_items.ps1
+.\scripts\02_build_prompts.ps1
+.\scripts\03_prepare_transfer_manifest.ps1
 ```
 
-The private config, `data/`, `outputs/`, model weights, images, prompt JSONL,
-eval metadata, and patient-linked outputs must never be committed.
+These commands write only inside the existing data root. The final command does
+not copy or move images; it writes `outputs\transfer\study2_files_from.txt`, a
+SHA256 manifest, and an aggregate summary. All paths in generated prompt JSONL
+are portable and relative to the data root, beginning with `files/`.
 
 ## Trusted data machine
 
-Run the aggregate bbox audit, rebuild optimized items, build prompts, and create
-the minimum private inference bundle:
+On Linux or Git Bash, copy the environment example and use the equivalent shell
+entrypoints:
 
 ```bash
 bash scripts/00_audit_schema.sh
 bash scripts/01_build_items.sh
 bash scripts/02_build_prompts.sh
-bash scripts/prepare_inference_bundle.sh /path/to/private/study2-bundle
+bash scripts/prepare_inference_bundle.sh
 ```
 
-The bundle contains only the required images, prompt JSONL, eval metadata, an
-aggregate manifest, and a private SHA256 file. Upload it with a resumable private
-transport such as `rsync`; never upload it to GitHub.
+Upload directly from the existing data root with the generated file list. No
+second private-data directory is needed:
+
+```bash
+rsync -av --partial --files-from=outputs/transfer/study2_files_from.txt \
+  /path/to/data/ user@new-host:/path/to/data/
+```
+
+Images, prompts, eval metadata, checksums, and patient-linked outputs remain
+restricted and must never be committed to GitHub.
 
 ## Remote GPU machine
 
-Point `MGHDA_DATA_ROOT` at the verified bundle root, configure the local
+Point `MGHDA_DATA_ROOT` at the transferred data root, configure the local
 MedGemma 4B IT path, then run:
 
 ```bash

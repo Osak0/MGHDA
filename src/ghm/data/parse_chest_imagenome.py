@@ -233,7 +233,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("data/interim"),
+        default=Path("interim"),
         help="Directory for Parquet tables and aggregate parser summary.",
     )
     parser.add_argument(
