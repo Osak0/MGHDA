@@ -157,8 +157,14 @@ def run_medgemma(
         ) from exc
 
     torch_dtype = _torch_dtype(torch, dtype)
-    processor = AutoProcessor.from_pretrained(str(model_path))
-    load_kwargs: dict[str, Any] = {"torch_dtype": torch_dtype}
+    processor = AutoProcessor.from_pretrained(
+        str(model_path),
+        local_files_only=True,
+    )
+    load_kwargs: dict[str, Any] = {
+        "torch_dtype": torch_dtype,
+        "local_files_only": True,
+    }
     if device == "auto":
         load_kwargs["device_map"] = "auto"
     model = AutoModelForImageTextToText.from_pretrained(str(model_path), **load_kwargs)

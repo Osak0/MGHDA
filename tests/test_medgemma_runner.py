@@ -113,3 +113,12 @@ def test_metadata_by_item_id_ignores_rows_without_item_id():
     rows = [{"item_id": "a", "answer_label": "Yes"}, {"answer_label": "No"}]
 
     assert metadata_by_item_id(rows) == {"a": {"item_id": "a", "answer_label": "Yes"}}
+
+
+def test_runner_requires_local_only_model_loading():
+    source = (Path(__file__).parents[1] / "src/ghm/inference/medgemma_runner.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert source.count("local_files_only=True") == 1
+    assert '"local_files_only": True' in source
