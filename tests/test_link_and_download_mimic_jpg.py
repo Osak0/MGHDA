@@ -6,8 +6,11 @@ from ghm.data.link_and_download_mimic_jpg import (
     build_link_rows,
     build_mimic_relative_path,
     collect_needed_images,
+    collect_needed_images_from_paths,
     download_manifest_rows,
     load_mimic_metadata,
+    stream_sampled_claim_pairs_with_links,
+    stream_items_with_links,
     update_items_with_links,
     write_csv_rows,
     write_url_list,
@@ -188,6 +191,78 @@ def test_csv_and_jsonl_helpers_for_synthetic_inputs(tmp_path):
     assert manifest_path.exists()
     assert url_path.read_text(encoding="utf-8").strip() == "https://example.test/a.jpg"
     assert read_jsonl(item_path)[0]["dicom_id"] == "dicom-a"
+
+
+def test_large_item_entrypoints_stream_jsonl_and_publish_complete_output(tmp_path):
+    input_path = tmp_path / "items.jsonl"
+    output_path = tmp_path / "linked.jsonl"
+    items = [_toy_item("a"), _toy_item("b", dicom_id="missing")]
+    write_jsonl(items, input_path)
+    link = {
+        ("10000032", "50414267", "dicom-a"): {
+            "image_id": "dicom-a",
+            "image_path": "files/p10/p10000032/s50414267/dicom-a.jpg",
+            "link_status": "matched",
+        }
+    }
+
+    needed = collect_needed_images_from_paths({"g1": input_path})
+    summary = stream_items_with_links(input_path, output_path, link)
+
+    assert len(needed) == 2
+    assert summary == {
+        "input_items": 2,
+        "linked_items": 1,
+        "excluded_missing_link": 1,
+    }
+    assert [row["item_id"] for row in read_jsonl(output_path)] == ["a"]
+    assert not output_path.with_name("linked.jsonl.tmp").exists()
+
+
+def test_study2_sampling_keeps_pairs_and_balances_evidence_states(tmp_path):
+    input_path = tmp_path / "candidates.jsonl"
+    output_path = tmp_path / "sampled.jsonl"
+    items = []
+    link = {}
+    for evidence_state in ("affirmed", "negated", "not_enough_evidence"):
+        for pair_index in range(3):
+            dicom_id = f"{evidence_state}-{pair_index}"
+            link[("10000032", "50414267", dicom_id)] = {
+                "image_id": dicom_id,
+                "image_path": f"files/{dicom_id}.jpg",
+                "link_status": "matched",
+            }
+            for polarity in ("positive", "negative"):
+                item = _toy_item(f"{dicom_id}-{polarity}", dicom_id=dicom_id)
+                item.update(
+                    {
+                        "granularity": "G1_finding_existence",
+                        "target_finding": f"finding-{pair_index}",
+                        "target_anatomy": None,
+                        "evidence_state": evidence_state,
+                        "claim_polarity": polarity,
+                    }
+                )
+                items.append(item)
+    write_jsonl(items, input_path)
+
+    summary = stream_sampled_claim_pairs_with_links(
+        input_path,
+        output_path,
+        link,
+        max_items=6,
+        seed=42,
+    )
+    sampled = read_jsonl(output_path)
+
+    assert summary["linked_items"] == 6
+    assert summary["selected_pairs_by_evidence_state"] == {
+        "affirmed": 1,
+        "negated": 1,
+        "not_enough_evidence": 1,
+    }
+    assert len(sampled) == 6
+    assert {row["claim_polarity"] for row in sampled} == {"positive", "negative"}
 
 
 def _toy_items():

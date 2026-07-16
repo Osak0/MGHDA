@@ -6,7 +6,7 @@ import hashlib
 import json
 from fractions import Fraction
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 
 SENSITIVE_SOURCE_FIELDS = {"phrase"}
@@ -58,8 +58,16 @@ def write_jsonl(rows: list[dict[str, Any]], path: Path) -> None:
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
     """Read JSONL rows for tests and local inspection."""
 
+    return list(iter_jsonl(path))
+
+
+def iter_jsonl(path: Path) -> Iterator[dict[str, Any]]:
+    """Yield JSONL rows without loading the complete file into memory."""
+
     with path.open("r", encoding="utf-8") as file:
-        return [json.loads(line) for line in file if line.strip()]
+        for line in file:
+            if line.strip():
+                yield json.loads(line)
 
 
 def update_summary(path: Path, section: str, payload: dict[str, Any]) -> None:

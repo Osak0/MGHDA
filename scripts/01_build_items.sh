@@ -30,18 +30,4 @@ python -m ghm.granularity.build_g2_items \
   --missing-finding-sample-size "$MISSING_FINDING_SAMPLE_SIZE" \
   --missing-finding-seed "$MISSING_FINDING_SEED"
 
-python -m ghm.data.link_and_download_mimic_jpg \
-  --study2-only \
-  --study2-g1-items "$MGHDA_DATA_ROOT/processed/items/study2_g1_claim_verification_items.jsonl" \
-  --study2-g2-items "$MGHDA_DATA_ROOT/processed/items/study2_g2_claim_verification_items.jsonl" \
-  --study2-g1-output "$MGHDA_DATA_ROOT/processed/items/study2_g1_claim_verification_items_linked.jsonl" \
-  --study2-g2-output "$MGHDA_DATA_ROOT/processed/items/study2_g2_claim_verification_items_linked.jsonl" \
-  --metadata "$MIMIC_METADATA_CSV" \
-  --split "$MIMIC_SPLIT_CSV" \
-  --files-root "$MIMIC_JPG_FILES_ROOT" \
-  --image-path-root "files" \
-  --needed-index "$MGHDA_DATA_ROOT/interim/study2_needed_mimic_jpg_index.parquet" \
-  --manifest "$MGHDA_DATA_ROOT/interim/study2_needed_mimic_jpg_download_manifest.csv" \
-  --url-list "$MGHDA_DATA_ROOT/interim/study2_needed_mimic_jpg_urls.txt" \
-  --summary "$MGHDA_DATA_ROOT/outputs/audits/study2_mimic_jpg_link_summary.json" \
-  --link-only-existing
+bash "$MGHDA_ROOT/scripts/01b_link_and_sample_items.sh"

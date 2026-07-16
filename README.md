@@ -59,6 +59,16 @@ bash scripts/02_build_prompts.sh
 bash scripts/prepare_inference_bundle.sh
 ```
 
+The linked Study 2 set defaults to 960 model inputs: 480 each for G1 and G2.
+Sampling keeps positive/negative claim pairs and balances affirmed, negated, and
+not-enough-evidence pairs, using only images already present under `files/`.
+If candidate construction already completed but linking was interrupted, resume
+without rebuilding candidates:
+
+```bash
+bash scripts/01b_link_and_sample_items.sh
+```
+
 Upload directly from the existing data root with the generated file list. No
 second private-data directory is needed:
 

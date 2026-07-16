@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import bisect
 import csv
 import json
 import os
@@ -19,7 +20,19 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from ghm.granularity.common import read_jsonl, update_summary, write_jsonl, write_parquet_rows
+from ghm.granularity.common import (
+    iter_jsonl,
+    stable_item_id,
+    update_summary,
+    write_parquet_rows,
+)
+from ghm.granularity.study2 import (
+    CLAIM_NEGATIVE,
+    CLAIM_POSITIVE,
+    EVIDENCE_AFFIRMED,
+    EVIDENCE_NEGATED,
+    EVIDENCE_NOT_ENOUGH,
+)
 
 
 DEFAULT_BASE_URL = "https://physionet.org/files/mimic-cxr-jpg/2.0.0/files"
@@ -84,7 +97,7 @@ def load_mimic_metadata(
     """Load MIMIC metadata and split rows indexed by subject/study/dicom."""
 
     split_by_key: dict[tuple[str, str, str], str | None] = {}
-    for row in _read_csv_rows(split_csv):
+    for row in _iter_csv_rows(split_csv):
         subject_id = normalize_id(row.get("subject_id"))
         study_id = normalize_id(row.get("study_id"))
         dicom_id = normalize_id(row.get("dicom_id"))
@@ -92,7 +105,7 @@ def load_mimic_metadata(
             split_by_key[(subject_id, study_id, dicom_id)] = row.get("split")
 
     metadata: dict[tuple[str, str, str], dict[str, str | None]] = {}
-    for row in _read_csv_rows(metadata_csv):
+    for row in _iter_csv_rows(metadata_csv):
         subject_id = normalize_id(row.get("subject_id"))
         study_id = normalize_id(row.get("study_id"))
         dicom_id = normalize_id(row.get("dicom_id"))
@@ -132,6 +145,36 @@ def collect_needed_images(
     return needed
 
 
+def collect_needed_images_from_paths(
+    item_paths: dict[str, Path],
+) -> dict[tuple[str | None, str | None, str | None], dict[str, str | None]]:
+    """Collect unique image keys by streaming large JSONL item files."""
+
+    needed: dict[tuple[str | None, str | None, str | None], dict[str, str | None]] = {}
+    for path in item_paths.values():
+        for item in iter_jsonl(path):
+            _add_needed_image(needed, item)
+    return needed
+
+
+def _add_needed_image(
+    needed: dict[tuple[str | None, str | None, str | None], dict[str, str | None]],
+    item: dict[str, Any],
+) -> None:
+    patient_id = normalize_id(item.get("patient_id"))
+    study_id = normalize_id(item.get("study_id"))
+    dicom_id = normalize_id(item.get("dicom_id") or item.get("image_id"))
+    image_id = normalize_id(item.get("image_id") or dicom_id)
+    if not (patient_id and study_id and dicom_id):
+        return
+    needed[(patient_id, study_id, dicom_id)] = {
+        "patient_id": patient_id,
+        "study_id": study_id,
+        "dicom_id": dicom_id,
+        "image_id": image_id,
+    }
+
+
 def build_link_rows(
     needed: dict[tuple[str | None, str | None, str | None], dict[str, str | None]],
     metadata: dict[tuple[str, str, str], dict[str, str | None]],
@@ -146,18 +189,14 @@ def build_link_rows(
     missing_metadata = 0
     id_mismatches = 0
     matched_metadata = 0
-    metadata_by_dicom: dict[str, list[dict[str, str | None]]] = {}
-    for row in metadata.values():
-        dicom_id = row.get("dicom_id")
-        if dicom_id:
-            metadata_by_dicom.setdefault(dicom_id, []).append(row)
+    metadata_dicoms = {key[2] for key in metadata}
 
     for key in sorted(needed, key=_sort_key):
         patient_id, study_id, dicom_id = key
         request = needed[key]
         metadata_row = metadata.get((patient_id or "", study_id or "", dicom_id or ""))
         if metadata_row is None:
-            link_status = "id_mismatch" if dicom_id in metadata_by_dicom else "missing_metadata"
+            link_status = "id_mismatch" if dicom_id in metadata_dicoms else "missing_metadata"
             if link_status == "id_mismatch":
                 id_mismatches += 1
             else:
@@ -244,6 +283,180 @@ def update_items_with_links(
         "linked_items": len(linked),
         "excluded_missing_link": excluded_missing_link,
     }
+
+
+def stream_items_with_links(
+    input_path: Path,
+    output_path: Path,
+    link_by_key: dict[tuple[str, str, str], dict[str, Any]],
+) -> dict[str, int]:
+    """Link one JSONL file row by row and atomically publish the result."""
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = output_path.with_name(f"{output_path.name}.tmp")
+    input_items = 0
+    linked_items = 0
+    excluded_missing_link = 0
+    try:
+        with temporary_path.open("w", encoding="utf-8") as output_file:
+            for item in iter_jsonl(input_path):
+                input_items += 1
+                updated = _item_with_link(item, link_by_key)
+                if updated is None:
+                    excluded_missing_link += 1
+                    continue
+                output_file.write(json.dumps(updated, ensure_ascii=False, sort_keys=True))
+                output_file.write("\n")
+                linked_items += 1
+        os.replace(temporary_path, output_path)
+    finally:
+        if temporary_path.exists():
+            temporary_path.unlink()
+
+    return {
+        "input_items": input_items,
+        "linked_items": linked_items,
+        "excluded_missing_link": excluded_missing_link,
+    }
+
+
+def stream_sampled_claim_pairs_with_links(
+    input_path: Path,
+    output_path: Path,
+    link_by_key: dict[tuple[str, str, str], dict[str, Any]],
+    *,
+    max_items: int,
+    seed: int,
+) -> dict[str, Any]:
+    """Select deterministic, evidence-balanced claim pairs from existing images."""
+
+    if max_items < 2:
+        raise ValueError("max_items must be at least 2")
+    evidence_states = [EVIDENCE_AFFIRMED, EVIDENCE_NEGATED, EVIDENCE_NOT_ENOUGH]
+    max_pairs = max_items // 2
+    base_quota, remainder = divmod(max_pairs, len(evidence_states))
+    quotas = {
+        state: base_quota + (1 if index < remainder else 0)
+        for index, state in enumerate(evidence_states)
+    }
+    selected: dict[str, list[tuple[str, str, list[dict[str, Any]]]]] = {
+        state: [] for state in evidence_states
+    }
+    eligible_pairs: Counter[str] = Counter()
+    input_items = 0
+    eligible_items = 0
+    excluded_missing_link = 0
+    excluded_incomplete_pair = 0
+    current_key: tuple[Any, ...] | None = None
+    current_items: list[dict[str, Any]] = []
+
+    def consider_pair() -> None:
+        nonlocal excluded_incomplete_pair
+        if not current_items:
+            return
+        polarities = {item.get("claim_polarity") for item in current_items}
+        if polarities != {CLAIM_POSITIVE, CLAIM_NEGATIVE} or len(current_items) != 2:
+            excluded_incomplete_pair += len(current_items)
+            return
+        evidence_state = str(current_items[0].get("evidence_state"))
+        if evidence_state not in quotas:
+            excluded_incomplete_pair += len(current_items)
+            return
+        eligible_pairs[evidence_state] += 1
+        pair_id = stable_item_id(
+            "claim_pair",
+            {"seed": seed, "pair_key": current_key},
+        )
+        rank = stable_item_id("sample_rank", {"seed": seed, "pair_id": pair_id})
+        entry = (rank, pair_id, list(current_items))
+        bucket = selected[evidence_state]
+        quota = quotas[evidence_state]
+        if quota == 0:
+            return
+        if len(bucket) < quota:
+            bisect.insort(bucket, entry)
+        elif entry[:2] < bucket[-1][:2]:
+            bucket.pop()
+            bisect.insort(bucket, entry)
+
+    for item in iter_jsonl(input_path):
+        input_items += 1
+        updated = _item_with_link(item, link_by_key)
+        if updated is None:
+            excluded_missing_link += 1
+            continue
+        eligible_items += 1
+        pair_key = _claim_pair_key(updated)
+        if current_key is not None and pair_key != current_key:
+            consider_pair()
+            current_items = []
+        current_key = pair_key
+        current_items.append(updated)
+    consider_pair()
+
+    chosen_pairs = sorted(
+        (entry for bucket in selected.values() for entry in bucket),
+        key=lambda entry: entry[:2],
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = output_path.with_name(f"{output_path.name}.tmp")
+    try:
+        with temporary_path.open("w", encoding="utf-8") as output_file:
+            for _, _, pair_items in chosen_pairs:
+                for item in pair_items:
+                    output_file.write(json.dumps(item, ensure_ascii=False, sort_keys=True))
+                    output_file.write("\n")
+        os.replace(temporary_path, output_path)
+    finally:
+        if temporary_path.exists():
+            temporary_path.unlink()
+
+    selected_pairs = {state: len(selected[state]) for state in evidence_states}
+    return {
+        "input_items": input_items,
+        "eligible_existing_image_items": eligible_items,
+        "linked_items": 2 * sum(selected_pairs.values()),
+        "excluded_missing_link": excluded_missing_link,
+        "excluded_incomplete_pair_items": excluded_incomplete_pair,
+        "max_items": max_items,
+        "sampling_seed": seed,
+        "pair_quota_by_evidence_state": quotas,
+        "eligible_pairs_by_evidence_state": dict(eligible_pairs),
+        "selected_pairs_by_evidence_state": selected_pairs,
+    }
+
+
+def _claim_pair_key(item: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        item.get("patient_id"),
+        item.get("study_id"),
+        item.get("dicom_id") or item.get("image_id"),
+        item.get("granularity"),
+        item.get("target_finding"),
+        item.get("target_anatomy"),
+        item.get("evidence_state"),
+    )
+
+
+def _item_with_link(
+    item: dict[str, Any],
+    link_by_key: dict[tuple[str, str, str], dict[str, Any]],
+) -> dict[str, Any] | None:
+    patient_id = normalize_id(item.get("patient_id"))
+    study_id = normalize_id(item.get("study_id"))
+    dicom_id = normalize_id(item.get("dicom_id") or item.get("image_id"))
+    if not (patient_id and study_id and dicom_id):
+        return None
+    link = link_by_key.get((patient_id, study_id, dicom_id))
+    if not link or link.get("link_status") != "matched" or not link.get("image_path"):
+        return None
+    updated = dict(item)
+    updated["patient_id"] = patient_id
+    updated["study_id"] = study_id
+    updated["image_id"] = link.get("image_id") or dicom_id
+    updated["dicom_id"] = dicom_id
+    updated["image_path"] = link["image_path"]
+    return updated
 
 
 def download_manifest_rows(
@@ -517,6 +730,21 @@ def main(argv: list[str] | None = None) -> int:
         help="Optional maximum number of missing images to attempt downloading.",
     )
     parser.add_argument(
+        "--max-linked-items-per-group",
+        type=int,
+        default=None,
+        help=(
+            "Optional per-granularity cap. Study 2 rows are sampled as complete "
+            "positive/negative claim pairs, balanced across evidence states."
+        ),
+    )
+    parser.add_argument(
+        "--sampling-seed",
+        type=int,
+        default=42,
+        help="Deterministic seed used with --max-linked-items-per-group.",
+    )
+    parser.add_argument(
         "--username-env",
         default=None,
         help="Environment variable containing an optional HTTP username.",
@@ -533,6 +761,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--timeout-seconds must be positive.")
     if args.download_limit is not None and args.download_limit < 1:
         parser.error("--download-limit must be positive when provided.")
+    if args.max_linked_items_per_group is not None and args.max_linked_items_per_group < 2:
+        parser.error("--max-linked-items-per-group must be at least 2 when provided.")
 
     if args.study2_only:
         item_paths = {
@@ -556,9 +786,8 @@ def main(argv: list[str] | None = None) -> int:
             "g2_h1": args.g2_h1_output,
             "g2_h2": args.g2_h2_output,
         }
-    item_groups = {name: read_jsonl(path) for name, path in item_paths.items()}
     metadata = load_mimic_metadata(args.metadata, args.split)
-    needed = collect_needed_images(item_groups)
+    needed = collect_needed_images_from_paths(item_paths)
     link_rows, link_summary = build_link_rows(
         needed,
         metadata,
@@ -580,10 +809,22 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         parser.exit(status=130, message="error: download interrupted by user.\n")
     available_links = available_links_from_manifest(manifest_rows)
-    linked_groups: dict[str, list[dict[str, Any]]] = {}
     item_summaries: dict[str, dict[str, int]] = {}
-    for name, items in item_groups.items():
-        linked_groups[name], item_summaries[name] = update_items_with_links(items, available_links)
+    for name, input_path in item_paths.items():
+        if args.study2_only and args.max_linked_items_per_group is not None:
+            item_summaries[name] = stream_sampled_claim_pairs_with_links(
+                input_path,
+                output_paths[name],
+                available_links,
+                max_items=args.max_linked_items_per_group,
+                seed=args.sampling_seed,
+            )
+        else:
+            item_summaries[name] = stream_items_with_links(
+                input_path,
+                output_paths[name],
+                available_links,
+            )
 
     try:
         write_parquet_rows(link_rows, args.needed_index, NEEDED_INDEX_COLUMNS)
@@ -591,9 +832,6 @@ def main(argv: list[str] | None = None) -> int:
         parser.exit(status=1, message=f"error: {exc}\n")
     write_csv_rows(manifest_rows, args.manifest, MANIFEST_COLUMNS)
     write_url_list(link_rows, args.url_list)
-    for name, linked_items in linked_groups.items():
-        write_jsonl(linked_items, output_paths[name])
-
     summary = {
         "linking": link_summary,
         "download": download_summary,
@@ -615,9 +853,9 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _read_csv_rows(path: Path) -> list[dict[str, str]]:
+def _iter_csv_rows(path: Path):
     with path.open("r", encoding="utf-8-sig", newline="") as file:
-        return list(csv.DictReader(file))
+        yield from csv.DictReader(file)
 
 
 def available_links_from_manifest(

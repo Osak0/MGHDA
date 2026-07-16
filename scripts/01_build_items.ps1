@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
     [int]$MissingFindingSampleSize = 2,
-    [int]$MissingFindingSeed = 42
+    [int]$MissingFindingSeed = 42,
+    [int]$MaxItemsTotal = 960,
+    [int]$SamplingSeed = 42
 )
 
 . (Join-Path $PSScriptRoot 'lib\Study2Data.ps1')
@@ -23,9 +25,6 @@ New-Item -ItemType Directory -Force -Path $items, $audits | Out-Null
 $summary = Join-Path $audits 'study2_candidate_summary.json'
 $g1 = Join-Path $items 'study2_g1_claim_verification_items.jsonl'
 $g2 = Join-Path $items 'study2_g2_claim_verification_items.jsonl'
-$g1Linked = Join-Path $items 'study2_g1_claim_verification_items_linked.jsonl'
-$g2Linked = Join-Path $items 'study2_g2_claim_verification_items_linked.jsonl'
-
 Invoke-Study2Python $context.Python @(
     '-m', 'ghm.granularity.build_g1_items',
     '--input', $attributes, '--image-index', $imageIndex,
@@ -40,15 +39,9 @@ Invoke-Study2Python $context.Python @(
     '--missing-finding-sample-size', "$MissingFindingSampleSize",
     '--missing-finding-seed', "$MissingFindingSeed"
 )
-Invoke-Study2Python $context.Python @(
-    '-m', 'ghm.data.link_and_download_mimic_jpg', '--study2-only',
-    '--study2-g1-items', $g1, '--study2-g2-items', $g2,
-    '--study2-g1-output', $g1Linked, '--study2-g2-output', $g2Linked,
-    '--metadata', $metadata, '--split', $split,
-    '--files-root', $filesRoot, '--image-path-root', 'files',
-    '--needed-index', (Join-Path $interim 'study2_needed_mimic_jpg_index.parquet'),
-    '--manifest', (Join-Path $interim 'study2_needed_mimic_jpg_download_manifest.csv'),
-    '--url-list', (Join-Path $interim 'study2_needed_mimic_jpg_urls.txt'),
-    '--summary', (Join-Path $audits 'study2_mimic_jpg_link_summary.json'),
-    '--link-only-existing'
-)
+& (Join-Path $PSScriptRoot '01b_link_and_sample_items.ps1') `
+    -MaxItemsTotal $MaxItemsTotal `
+    -SamplingSeed $SamplingSeed
+if ($LASTEXITCODE -ne 0) {
+    throw "Link and sample step failed with exit code $LASTEXITCODE"
+}

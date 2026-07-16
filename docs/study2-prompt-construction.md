@@ -45,6 +45,20 @@ a negative claim. G1 uses `in this chest X-ray`; G2 uses `in the {bbox_name}`.
 - A Chest ImaGenome attribute with `bbox_name=False` is never used as G2
   localization evidence.
 
+## Reference experiment sampling
+
+- Build the complete deterministic candidate pool first, then retain only
+  candidates whose MIMIC-CXR-JPG image already exists locally.
+- The reference run uses `STUDY2_MAX_ITEMS_TOTAL=960` and
+  `STUDY2_SAMPLE_SEED=42`: 480 items each for G1 and G2.
+- Sampling keeps the positive and negative claims for one evidence target as an
+  inseparable pair. Each granularity selects 80 pairs for each of affirmed,
+  negated, and not-enough-evidence states. This yields 160 Supported, 160
+  Contradicted, and 160 Not enough evidence items per granularity.
+- If an evidence stratum has fewer eligible local-image pairs than its quota,
+  keep the smaller count and report the shortage; never substitute a missing
+  image or convert missing evidence to a negative label.
+
 ## Separated prompt layers
 
 Model-input JSONL contains only `item_id`, `image_path`, `prompt_template_id`,
