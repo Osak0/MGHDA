@@ -13,6 +13,6 @@ New-Item -ItemType Directory -Force -Path $auditDir | Out-Null
 Invoke-Study2Python $context.Python @(
     '-m', 'ghm.data.audit_chest_imagenome',
     '--objects', $objects,
-    '--attributes', $attributes,
+    '--assertions', $attributes,
     '--output-dir', $auditDir
 )

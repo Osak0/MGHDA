@@ -20,6 +20,15 @@ def test_root_data_ignore_does_not_hide_source_package():
     assert "data/" not in ignore_text.splitlines()
 
 
+def test_audit_wrappers_use_the_audit_cli_assertions_argument():
+    repo_root = Path(__file__).parents[1]
+
+    for relative_path in ("scripts/00_audit_schema.sh", "scripts/00_audit_schema.ps1"):
+        wrapper_text = (repo_root / relative_path).read_text(encoding="utf-8")
+        assert "--assertions" in wrapper_text
+        assert "--attributes" not in wrapper_text
+
+
 def test_bundle_copies_deduplicated_images_and_verifies_sha256(tmp_path):
     data_root = tmp_path / "private-data"
     image = data_root / "files/p10/p100/s500/image.jpg"
