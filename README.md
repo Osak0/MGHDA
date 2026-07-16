@@ -1,61 +1,83 @@
 # MGHDA
 
-Research on granularity-dependent hallucination in medical multimodal large
-language models, with a first-stage focus on chest X-ray data.
+Reproducible Study 2 experiments for granularity-dependent hallucination in
+medical multimodal models on chest X-rays.
 
-## Current Phase
+The current runnable scope is the optimized G1/G2 claim-verification experiment
+defined in [`docs/study2-prompt-construction.md`](docs/study2-prompt-construction.md).
+Every prompt uses the same answer space: Supported, Contradicted, or Not enough
+evidence. G2 missing-evidence items use same-bbox vocabulary and bbox-quality
+gating.
 
-This repository is currently focused on the Study 2 G1/G2 claim-verification
-pilot. Training, model downloads, and unrestricted real-data inspection remain
-out of scope for this repo workflow.
-
-## Project Goal
-
-The project studies whether medical multimodal large language models hallucinate
-differently across clinical-semantic granularity levels. The initial benchmark
-will derive multi-granularity experimental items from MIMIC-CXR /
-MIMIC-CXR-JPG, Chest ImaGenome, and RadGraph after the datasets are available
-and audited.
-
-## Planned Pipeline
+## Repository layout
 
 ```text
-raw data
-  -> intermediate tables
-  -> Study 2 model-ready claim-verification items
-  -> prompts
-  -> model outputs
-  -> scored outputs
-  -> analysis
+configs/                 tracked, non-secret configuration examples
+docs/                    experiment specification and schemas
+scripts/                 ordered local-preparation and remote-run entrypoints
+src/ghm/data/            Chest ImaGenome audit, parsing, and image linking
+src/ghm/granularity/     optimized G1/G2 item construction
+src/ghm/prompts/         separated model-input/eval-metadata prompt builder
+src/ghm/inference/       MedGemma runner
+src/ghm/evaluation/      parsing, scoring, validation, and visualization
+src/ghm/migration/       preflight and private-bundle utilities
+tests/                   synthetic tests only
 ```
 
-Study 2 uses one ABC answer space:
+## Configure
 
-```text
-A. Supported
-B. Contradicted
-C. Not enough evidence
+```bash
+cp configs/study2_medgemma.env.example configs/study2_medgemma.env
+# Edit the private paths in configs/study2_medgemma.env.
 ```
 
-G1 and G2 items are regenerated from intermediate Chest ImaGenome tables, then
-linked to already-downloaded MIMIC-CXR-JPG files with `--link-only-existing`.
+The private config, `data/`, `outputs/`, model weights, images, prompt JSONL,
+eval metadata, and patient-linked outputs must never be committed.
 
-## Data Safety
+## Trusted data machine
 
-Do not commit raw medical images, radiology reports, restricted-access dataset
-files, or patient-linked outputs to Git. Public fixtures should use toy examples
-or fully de-identified synthetic records only.
+Run the aggregate bbox audit, rebuild optimized items, build prompts, and create
+the minimum private inference bundle:
 
-## Training Status
+```bash
+bash scripts/00_audit_schema.sh
+bash scripts/01_build_items.sh
+bash scripts/02_build_prompts.sh
+bash scripts/prepare_inference_bundle.sh /path/to/private/study2-bundle
+```
 
-Training, LoRA, SFT, and DPO are reserved for later stages. They should only be
-considered after data parsing, schema audit, and pilot inference evaluation are
-stable.
+The bundle contains only the required images, prompt JSONL, eval metadata, an
+aggregate manifest, and a private SHA256 file. Upload it with a resumable private
+transport such as `rsync`; never upload it to GitHub.
 
-## pilot experiment
-torch: 2.5.1+cu121
-cuda: True
-torch cuda: 12.1
-transformers: 4.50.3
-accelerate: 1.13.0
-pillow ok
+## Remote GPU machine
+
+Point `MGHDA_DATA_ROOT` at the verified bundle root, configure the local
+MedGemma 4B IT path, then run:
+
+```bash
+bash scripts/verify_inference_bundle.sh
+bash scripts/preflight_medgemma.sh
+bash scripts/dry_run_medgemma_inputs.sh
+bash scripts/run_medgemma_smoke.sh
+bash scripts/run_medgemma_full.sh
+```
+
+The smoke and full wrappers each run inference, scoring, and structural
+validation with the same exported run name; the full wrapper also creates the
+aggregate figures. Standalone score, validation, and visualization scripts
+remain available for re-analysis.
+
+The runner checkpoints each item and supports resume. Full row-level outputs
+remain private; only aggregate summaries without identifiers or paths are safe
+to share.
+
+## Reference environment
+
+- Python 3.10 or 3.11
+- PyTorch 2.5.1 with CUDA 12.1 (install separately for the platform)
+- Transformers 4.50.3
+- Accelerate 1.13.0
+- Pillow, PyArrow, Matplotlib
+
+The preflight command checks the actual platform and never downloads a model.

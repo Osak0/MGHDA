@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${MGHDA_ROOT:=/xjtu-mlp-vepfs/wangruiyang/MGHDA}"
-: "${MGHDA_DATA_ROOT:=/xjtu-mlp-vepfs/wangruiyang/MGHDA-data}"
+source "$(dirname "$0")/lib/study2_env.sh"
+require_env MGHDA_DATA_ROOT
 : "${RUN_NAME:=medgemma_study2}"
 
 cd "$MGHDA_ROOT"
-export PYTHONPATH="$MGHDA_ROOT/src"
-
 mkdir -p "$MGHDA_DATA_ROOT/outputs/raw_responses"
 mkdir -p "$MGHDA_DATA_ROOT/outputs/scored"
 mkdir -p "$MGHDA_DATA_ROOT/outputs/audits"

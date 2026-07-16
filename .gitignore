@@ -1,7 +1,7 @@
 # =====================
 # Restricted or generated medical data
 # =====================
-data/
+/data/
 
 # Keep synthetic public fixtures available for tests.
 !data/fixtures/
@@ -10,13 +10,14 @@ data/
 # =====================
 # Experiment outputs
 # =====================
-outputs/
-logs/
+/outputs/
+/logs/
 
 # =====================
 # Local environments and caches
 # =====================
 .env
+configs/*.env
 .venv/
 venv/
 .venv2/
@@ -25,6 +26,8 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.uv-cache/
+.testdeps/
 
 # =====================
 # Local machine files
