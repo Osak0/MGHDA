@@ -3,6 +3,11 @@
 This is the source of truth for the current optimized Study 2 experiment. The
 taxonomy names remain stable; only G1 and G2 are runnable in this repository.
 
+Study 3 reuses the same `G1_finding_existence` and
+`G2_anatomical_localization` taxonomy definitions without redefining them. Its
+independent explicit-finding multi-select task, construction rules, schemas,
+and metrics are defined in `docs/study3-multiselect-construction.md`.
+
 ## Study 2 common task
 
 G1 and G2 use `claim_verification_abc` with template
