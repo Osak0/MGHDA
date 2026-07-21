@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${RUN_NAME:=medgemma_study2_full}"
-export RUN_NAME
+: "${RUN_NAME:=medgemma_study2_v2_full}"
+: "${STUDY2_SET:=full_v2}"
+: "${RUN_PHASE:=full}"
+export RUN_NAME STUDY2_SET RUN_PHASE
 unset LIMIT
-
-bash "$(dirname "$0")/02_run_inference.sh"
-bash "$(dirname "$0")/03_score_outputs.sh"
-bash "$(dirname "$0")/validate_medgemma_run.sh"
-bash "$(dirname "$0")/04_make_figures.sh"
+exec bash "$(dirname "$0")/study2/run.sh"

@@ -90,17 +90,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--g1-output",
         type=Path,
-        default=Path("processed/study3/items/study3_g1_multiselect_items.jsonl"),
+        default=Path("processed/study3/v2/items/study3_g1_multiselect_items.jsonl"),
     )
     parser.add_argument(
         "--g2-output",
         type=Path,
-        default=Path("processed/study3/items/study3_g2_multiselect_items.jsonl"),
+        default=Path("processed/study3/v2/items/study3_g2_multiselect_items.jsonl"),
     )
     parser.add_argument(
         "--summary",
         type=Path,
-        default=Path("outputs/study3/audits/study3_item_summary.json"),
+        default=Path("outputs/study3/v2/audits/study3_item_summary.json"),
     )
     parser.add_argument(
         "--natural-anchors",

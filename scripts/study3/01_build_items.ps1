@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
-    [int]$NaturalAnchors = 500,
-    [int]$ControlledAnchors = 100,
+    [int]$NaturalAnchors = 250,
+    [int]$ControlledAnchors = 50,
     [string]$ControlledK = '2,3,4,5',
     [int]$SamplingSeed = 42
 )
@@ -16,8 +16,8 @@ $filesRoot = Join-Path $context.DataRoot 'files'
 foreach ($required in @($attributes, $objects, $metadata, $split, $filesRoot)) {
     Assert-Study3Path $required
 }
-$items = Join-Path $context.DataRoot 'processed\study3\items'
-$audits = Join-Path $context.DataRoot 'outputs\study3\audits'
+$items = Join-Path $context.DataRoot 'processed\study3\v2\items'
+$audits = Join-Path $context.DataRoot 'outputs\study3\v2\audits'
 New-Item -ItemType Directory -Force -Path $items, $audits | Out-Null
 Invoke-Study3Python $context.Python @(
     '-m', 'ghm.study3.build_items',

@@ -65,6 +65,13 @@ def validate_run_layers(
     }
     if len(generation_configs) > 1:
         failures.append("generation_config_mismatch")
+    model_ids = {
+        str(row.get("model_id") or row.get("model_name"))
+        for row in raw
+        if row.get("model_id") or row.get("model_name")
+    }
+    if len(model_ids) != 1:
+        failures.append("model_identity_mismatch")
 
     parse_status_counts = _count_values(parsed, "parse_status")
     invalid_responses = len(parsed) - parse_status_counts.get("success", 0)
@@ -81,6 +88,7 @@ def validate_run_layers(
         "parse_status_counts": parse_status_counts,
         "prompt_template_ids": template_ids,
         "generation_config_variants": len(generation_configs),
+        "model_identity_variants": len(model_ids),
     }
 
 

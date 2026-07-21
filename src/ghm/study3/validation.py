@@ -76,6 +76,17 @@ def validate_study3_run(
     )
     if any(not value.startswith("study3_") for value in prompt_template_ids):
         errors.append("non-Study-3 prompt template detected")
+    model_ids = (
+        {
+            str(row.get("model_id") or row.get("model_name"))
+            for row in raw_rows
+            if row.get("model_id") or row.get("model_name")
+        }
+        if raw_rows is not None
+        else set()
+    )
+    if raw_rows is not None and len(model_ids) != 1:
+        errors.append("raw rows must contain exactly one model identity")
 
     return {
         "experiment_id": EXPERIMENT_ID,
@@ -88,6 +99,7 @@ def validate_study3_run(
         "leaked_model_rows": leaked_model_rows,
         "missing_images": missing_images,
         "prompt_template_ids": prompt_template_ids,
+        "model_identity_variants": len(model_ids),
     }
 
 

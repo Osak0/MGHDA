@@ -3,23 +3,38 @@ set -euo pipefail
 
 source "$(dirname "$0")/../lib/study3_env.sh"
 require_env MGHDA_DATA_ROOT
-require_env MEDGEMMA_MODEL_PATH
+MODEL_PATH="${MODEL_PATH:-${MEDGEMMA_MODEL_PATH:-}}"
+require_env MODEL_PATH
+require_env MODEL_NAME
 require_study3_identity
-: "${RUN_NAME:=medgemma_study3_multiselect_v1}"
+: "${RUN_NAME:=model_study3_multiselect_v2}"
 : "${SEED:=42}"
 
 cd "$MGHDA_ROOT"
-mkdir -p "$MGHDA_DATA_ROOT/outputs/study3/raw_responses"
-for granularity in g1 g2; do
+mkdir -p "$MGHDA_DATA_ROOT/outputs/study3/v2/raw_responses"
+if [[ "${STUDY3_MODE:-full}" == "smoke" ]]; then
+  splits=(smoke)
+else
+  splits=(g1 g2)
+fi
+for granularity in "${splits[@]}"; do
+  if [[ "$granularity" == "smoke" ]]; then
+    input_path="$MGHDA_DATA_ROOT/processed/study3/v2/smoke/model_inputs.jsonl"
+    metadata_path="$MGHDA_DATA_ROOT/processed/study3/v2/smoke/eval_metadata.jsonl"
+  else
+    input_path="$MGHDA_DATA_ROOT/processed/study3/v2/prompts/study3_${granularity}_multiselect_model_inputs.jsonl"
+    metadata_path="$MGHDA_DATA_ROOT/processed/study3/v2/prompts/study3_${granularity}_multiselect_eval_metadata.jsonl"
+  fi
   limit_args=()
   if [[ -n "${LIMIT:-}" ]]; then
     limit_args=(--limit "$LIMIT")
   fi
   python -m ghm.inference.medgemma_runner \
-    --input "$MGHDA_DATA_ROOT/processed/study3/prompts/study3_${granularity}_multiselect_model_inputs.jsonl" \
-    --eval-metadata "$MGHDA_DATA_ROOT/processed/study3/prompts/study3_${granularity}_multiselect_eval_metadata.jsonl" \
-    --output "$MGHDA_DATA_ROOT/outputs/study3/raw_responses/${RUN_NAME}_${granularity}_raw.jsonl" \
-    --model-path "$MEDGEMMA_MODEL_PATH" \
+    --input "$input_path" \
+    --eval-metadata "$metadata_path" \
+    --output "$MGHDA_DATA_ROOT/outputs/study3/v2/raw_responses/${RUN_NAME}_${granularity}_raw.jsonl" \
+    --model-path "$MODEL_PATH" \
+    --model-name "$MODEL_NAME" \
     --data-root "$MGHDA_DATA_ROOT" \
     "${limit_args[@]}" \
     --batch-size "${BATCH_SIZE:-1}" \
@@ -28,6 +43,6 @@ for granularity in g1 g2; do
     --dtype "${DTYPE:-bfloat16}" \
     --device "${DEVICE:-cuda}" \
     --seed "$SEED" \
-    --checkpoint "$MGHDA_DATA_ROOT/outputs/study3/raw_responses/${RUN_NAME}_${granularity}.checkpoint.jsonl" \
+    --checkpoint "$MGHDA_DATA_ROOT/outputs/study3/v2/raw_responses/${RUN_NAME}_${granularity}.checkpoint.jsonl" \
     --resume
 done

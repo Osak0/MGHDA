@@ -1,5 +1,34 @@
 # Study 2 Prompt Construction
 
+## Prompt semantic ablation
+
+The original `claim_verification_abc_v1` remains immutable. The improved
+`claim_verification_abc_definitions_v2` adds only:
+
+```text
+A. Supported:
+The radiographic evidence affirms the exact claim.
+
+B. Contradicted:
+The radiographic evidence supports the logical opposite of the claim.
+
+C. Not enough evidence:
+The radiographic evidence establishes neither the claim nor its logical opposite.
+```
+
+No additional warning or interpretation is added. Full v1 and full v2 are
+rendered from the same 960 linked items. The fixed paired ablation
+selects 10 items from each of 12 cells:
+
+```text
+G1/G2 × affirmed/negated/not_enough_evidence × positive/negative
+```
+
+Seed is 42. The v1/v2 records have identical item IDs, images, claims, and
+metadata; only prompt text and template ID differ. Neither full version
+rebuilds or resamples the linked items. The 120-item phase and 960-item phase
+share per-version checkpoints, so successful ablation records are reused.
+
 This document is the experiment specification for the optimized Study 2 G1/G2
 claim-verification run. It supersedes the former root-level
 `prompt-construct3.md` draft.

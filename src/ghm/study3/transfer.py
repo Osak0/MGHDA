@@ -95,6 +95,7 @@ def create_transfer_manifest(
                 "|".join(
                     [
                         str(row.get("granularity")),
+                        str(row.get("prompt_framing")),
                         str(row.get("variant")),
                         str(row.get("query_relation")),
                     ]
@@ -115,7 +116,7 @@ def create_transfer_manifest(
         "payload_files": len(payload_paths),
         "payload_bytes": sum(path.stat().st_size for path in payload_paths),
         "prompt_template_ids": sorted(template_ids),
-        "counts_by_granularity_variant_relation": dict(sorted(counts.items())),
+        "counts_by_granularity_framing_variant_relation": dict(sorted(counts.items())),
         "copies_created": 0,
     }
     with summary_path.open("w", encoding="utf-8") as file:
@@ -187,8 +188,8 @@ def verify_transfer(
         if layer_summary["records"] != summary.get("model_input_records"):
             errors.append("transferred record count does not match transfer summary")
         if (
-            layer_summary["counts_by_granularity_variant_relation"]
-            != summary.get("counts_by_granularity_variant_relation")
+            layer_summary["counts_by_granularity_framing_variant_relation"]
+            != summary.get("counts_by_granularity_framing_variant_relation")
         ):
             errors.append("transferred strata counts do not match transfer summary")
     except (FileNotFoundError, ValueError, KeyError, json.JSONDecodeError) as exc:
@@ -246,6 +247,7 @@ def _validate_transferred_layers(
                 "|".join(
                     [
                         str(row.get("granularity")),
+                        str(row.get("prompt_framing")),
                         str(row.get("variant")),
                         str(row.get("query_relation")),
                     ]
@@ -253,7 +255,7 @@ def _validate_transferred_layers(
             ] += 1
     return {
         "records": len(all_ids),
-        "counts_by_granularity_variant_relation": dict(sorted(counts.items())),
+        "counts_by_granularity_framing_variant_relation": dict(sorted(counts.items())),
     }
 
 

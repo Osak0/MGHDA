@@ -16,10 +16,13 @@ from ghm.study3.constants import (
     ABSENT,
     CONTROLLED,
     DEFAULT_CONTROLLED_K,
+    EVIDENCE,
     EXPERIMENT_ID,
     NATURAL,
     PRESENT,
+    PROMPT_FRAMINGS,
     QUESTION_TYPE,
+    STATE,
 )
 from ghm.study3.linking import normalize_id
 
@@ -322,7 +325,7 @@ def build_multiselect_items(
     controlled_k: tuple[int, ...] = DEFAULT_CONTROLLED_K,
     seed: int,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Create paired present/absent natural and nested controlled items."""
+    """Create four framing/relation records per natural or controlled option set."""
 
     if not controlled_k or min(controlled_k) < 2:
         raise ValueError("controlled_k must contain integers of at least 2")
@@ -372,6 +375,8 @@ def build_multiselect_items(
         "controlled_items": sum(item["variant"] == CONTROLLED for item in items),
         "present_items": sum(item["query_relation"] == PRESENT for item in items),
         "absent_items": sum(item["query_relation"] == ABSENT for item in items),
+        "state_items": sum(item["prompt_framing"] == STATE for item in items),
+        "evidence_items": sum(item["prompt_framing"] == EVIDENCE for item in items),
         "controlled_k": list(controlled_k),
         "sampling_seed": seed,
     }
@@ -502,27 +507,29 @@ def _paired_items(
         },
     )
     results: list[dict[str, Any]] = []
-    for relation in (PRESENT, ABSENT):
-        selected_polarity = "yes" if relation == PRESENT else "no"
-        gold = [
-            option_id(index)
-            for index, row in enumerate(ordered_candidates)
-            if row["polarity"] == selected_polarity
-        ]
-        granularity_prefix = (
-            "study3_g1_ms"
-            if anchor["granularity"] == "G1_finding_existence"
-            else "study3_g2_ms"
-        )
-        item_id = stable_item_id(
-            granularity_prefix,
-            {
-                "option_set_id": option_set_id,
-                "query_relation": relation,
-            },
-        )
-        results.append(
-            {
+    for prompt_framing in PROMPT_FRAMINGS:
+        for relation in (PRESENT, ABSENT):
+            selected_polarity = "yes" if relation == PRESENT else "no"
+            gold = [
+                option_id(index)
+                for index, row in enumerate(ordered_candidates)
+                if row["polarity"] == selected_polarity
+            ]
+            granularity_prefix = (
+                "study3_g1_ms"
+                if anchor["granularity"] == "G1_finding_existence"
+                else "study3_g2_ms"
+            )
+            item_id = stable_item_id(
+                granularity_prefix,
+                {
+                    "option_set_id": option_set_id,
+                    "prompt_framing": prompt_framing,
+                    "query_relation": relation,
+                },
+            )
+            results.append(
+                {
                 "item_id": item_id,
                 "experiment_id": EXPERIMENT_ID,
                 "source_dataset": anchor["source_dataset"],
@@ -533,6 +540,7 @@ def _paired_items(
                 "image_path": anchor.get("image_path"),
                 "granularity": anchor["granularity"],
                 "question_type": QUESTION_TYPE,
+                "prompt_framing": prompt_framing,
                 "query_relation": relation,
                 "variant": variant,
                 "controlled_k": k,
@@ -553,8 +561,8 @@ def _paired_items(
                 ),
                 "source_quality": anchor["source_quality"],
                 "valid_for_training": False,
-            }
-        )
+                }
+            )
     return results
 
 

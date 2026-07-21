@@ -1,17 +1,20 @@
 from pathlib import Path
 
-from ghm.inference.medgemma_runner import (
-    build_error_row,
-    dry_run_rows,
-    metadata_by_item_id,
-    resolve_image_path,
-)
+import pytest
+
 from ghm.granularity.study2 import (
     ANSWER_SUPPORTED,
     CLAIM_POSITIVE,
     EVIDENCE_AFFIRMED,
     PROMPT_TEMPLATE_ID,
     QUESTION_TYPE,
+)
+from ghm.inference.medgemma_runner import (
+    _validate_resumed_row,
+    build_error_row,
+    dry_run_rows,
+    metadata_by_item_id,
+    resolve_image_path,
 )
 
 
@@ -64,6 +67,10 @@ def test_dry_run_counts_existing_images_and_metadata(tmp_path):
 
     assert summary == {
         "prompt_records": 2,
+        "eval_metadata_records": 1,
+        "duplicate_prompt_item_ids": 0,
+        "duplicate_metadata_item_ids": 0,
+        "unexpected_metadata": 0,
         "missing_metadata": 1,
         "missing_image_path": 0,
         "existing_images": 1,
@@ -73,6 +80,23 @@ def test_dry_run_counts_existing_images_and_metadata(tmp_path):
     assert rows[0]["has_eval_metadata"] is True
     assert rows[1]["image_exists"] is False
     assert rows[1]["has_eval_metadata"] is False
+
+
+def test_dry_run_reports_duplicate_and_unexpected_metadata_ids(tmp_path):
+    image = tmp_path / "files/image.jpg"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"synthetic")
+    prompts = [
+        {"item_id": "a", "image_path": "files/image.jpg"},
+        {"item_id": "a", "image_path": "files/image.jpg"},
+    ]
+    metadata = [{"item_id": "a"}, {"item_id": "b"}, {"item_id": "b"}]
+
+    _, summary = dry_run_rows(prompts, metadata, data_root=tmp_path)
+
+    assert summary["duplicate_prompt_item_ids"] == 1
+    assert summary["duplicate_metadata_item_ids"] == 1
+    assert summary["unexpected_metadata"] == 1
 
 
 def test_error_row_preserves_eval_metadata_but_not_model_answer_in_prompt():
@@ -103,6 +127,7 @@ def test_error_row_preserves_eval_metadata_but_not_model_answer_in_prompt():
 
     assert "answer_label" not in record
     assert row["answer_label"] == ANSWER_SUPPORTED
+    assert row["model_id"] == "medgemma"
     assert row["claim_polarity"] == CLAIM_POSITIVE
     assert row["evidence_state"] == EVIDENCE_AFFIRMED
     assert row["raw_response"] == ""
@@ -122,3 +147,34 @@ def test_runner_requires_local_only_model_loading():
 
     assert source.count("local_files_only=True") == 1
     assert '"local_files_only": True' in source
+
+
+def test_resume_rejects_another_model_or_prompt_template():
+    config = {"seed": 42, "temperature": 0.0}
+    previous = {
+        "model_id": "google/medgemma-4b-it",
+        "prompt_template_id": "claim_verification_abc_v1",
+        "generation_config": config,
+    }
+    current = {"prompt_template_id": "claim_verification_abc_v1"}
+
+    _validate_resumed_row(
+        previous,
+        current,
+        model_name="google/medgemma-4b-it",
+        generation_config=config,
+    )
+    with pytest.raises(ValueError, match="model identity"):
+        _validate_resumed_row(
+            previous,
+            current,
+            model_name="Qwen/Qwen3-VL-8B-Instruct",
+            generation_config=config,
+        )
+    with pytest.raises(ValueError, match="prompt template"):
+        _validate_resumed_row(
+            previous,
+            {"prompt_template_id": "claim_verification_abc_definitions_v2"},
+            model_name="google/medgemma-4b-it",
+            generation_config=config,
+        )

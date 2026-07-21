@@ -3,9 +3,11 @@ set -euo pipefail
 
 source "$(dirname "$0")/lib/study2_env.sh"
 require_env MGHDA_DATA_ROOT
-: "${RUN_NAME:=medgemma_study2}"
-
-cd "$MGHDA_ROOT"
+require_env RUN_NAME
+: "${STUDY2_SET:=full_v2}"
+: "${RUN_PHASE:=full}"
+phase_root="$MGHDA_DATA_ROOT/outputs/study2/$STUDY2_SET/$RUN_NAME/$RUN_PHASE"
 python -m ghm.evaluation.visualize_results \
-  --inputs "$MGHDA_DATA_ROOT/outputs/audits/${RUN_NAME}_study2_g1_g2_score_summary.json" \
-  --output-dir "$MGHDA_DATA_ROOT/outputs/reports/${RUN_NAME}_study2"
+  --inputs "$phase_root/audits/combined_score_summary.json" \
+  --run-names "$RUN_NAME-$RUN_PHASE" \
+  --output-dir "$phase_root/reports"

@@ -3,8 +3,8 @@ param()
 
 . (Join-Path $PSScriptRoot '..\lib\Study3Data.ps1')
 $context = Get-Study3Context
-$prompts = Join-Path $context.DataRoot 'processed\study3\prompts'
-$transfer = Join-Path $context.DataRoot 'outputs\study3\transfer'
+$prompts = Join-Path $context.DataRoot 'processed\study3\v2\prompts'
+$transfer = Join-Path $context.DataRoot 'outputs\transfer\study3_v2'
 $modelInputs = @(
     (Join-Path $prompts 'study3_g1_multiselect_model_inputs.jsonl'),
     (Join-Path $prompts 'study3_g2_multiselect_model_inputs.jsonl')
@@ -29,4 +29,4 @@ Invoke-Study3Python $context.Python @(
     '--eval-metadata', $evalMetadata[0], $evalMetadata[1]
 )
 Write-Host 'No images were copied or moved.'
-Write-Host 'Transfer list: outputs\study3\transfer\study3_files_from.txt'
+Write-Host 'Transfer list: outputs\transfer\study3_v2\study3_files_from.txt'

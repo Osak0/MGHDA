@@ -3,14 +3,23 @@ set -euo pipefail
 
 source "$(dirname "$0")/lib/study2_env.sh"
 require_env MGHDA_DATA_ROOT
-: "${RUN_NAME:=medgemma_study2}"
-
-for split in study2_g1 study2_g2; do
+require_env RUN_NAME
+: "${STUDY2_SET:=full_v2}"
+: "${RUN_PHASE:=full}"
+version="${STUDY2_SET#full_}"
+phase_root="$MGHDA_DATA_ROOT/outputs/study2/$STUDY2_SET/$RUN_NAME/$RUN_PHASE"
+for split in g1 g2; do
+  if [[ "$RUN_PHASE" == "ablation" ]]; then
+    input_path="$MGHDA_DATA_ROOT/processed/study2/ablation/$version/${split}_model_inputs.jsonl"
+    metadata_path="$MGHDA_DATA_ROOT/processed/study2/ablation/$version/${split}_eval_metadata.jsonl"
+  else
+    input_path="$MGHDA_DATA_ROOT/processed/study2/$version/study2_${split}_model_inputs.jsonl"
+    metadata_path="$MGHDA_DATA_ROOT/processed/study2/$version/study2_${split}_eval_metadata.jsonl"
+  fi
   python -m ghm.evaluation.validate_run \
-    --model-inputs "$MGHDA_DATA_ROOT/processed/prompts/${split}_claim_verification_model_inputs.jsonl" \
-    --eval-metadata "$MGHDA_DATA_ROOT/processed/prompts/${split}_claim_verification_eval_metadata.jsonl" \
-    --raw "$MGHDA_DATA_ROOT/outputs/raw_responses/${RUN_NAME}_${split}.jsonl" \
-    --parsed "$MGHDA_DATA_ROOT/outputs/raw_responses/${RUN_NAME}_${split}_parsed.jsonl" \
-    --scored "$MGHDA_DATA_ROOT/outputs/scored/${RUN_NAME}_${split}_scored.jsonl" \
-    --output "$MGHDA_DATA_ROOT/outputs/audits/${RUN_NAME}_${split}_validation.json"
+    --model-inputs "$input_path" --eval-metadata "$metadata_path" \
+    --raw "$phase_root/raw/${split}.jsonl" \
+    --parsed "$phase_root/parsed/${split}.jsonl" \
+    --scored "$phase_root/scored/${split}.jsonl" \
+    --output "$phase_root/audits/${split}_validation.json"
 done

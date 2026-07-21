@@ -5,16 +5,19 @@ from __future__ import annotations
 from pathlib import Path
 
 
-EXPERIMENT_ID = "study3_multiselect_v1"
-QUESTION_TYPE = "anatomicalfinding_multiselect_v1"
+EXPERIMENT_ID = "study3_multiselect_v2"
+QUESTION_TYPE = "anatomicalfinding_multiselect_v2"
 PRESENT = "present"
 ABSENT = "absent"
 QUERY_RELATIONS = (PRESENT, ABSENT)
+STATE = "state"
+EVIDENCE = "evidence"
+PROMPT_FRAMINGS = (STATE, EVIDENCE)
 NATURAL = "natural"
 CONTROLLED = "controlled"
 VARIANTS = (NATURAL, CONTROLLED)
-DEFAULT_NATURAL_ANCHORS = 500
-DEFAULT_CONTROLLED_ANCHORS = 100
+DEFAULT_NATURAL_ANCHORS = 250
+DEFAULT_CONTROLLED_ANCHORS = 50
 DEFAULT_CONTROLLED_K = (2, 3, 4, 5)
 DEFAULT_SEED = 42
 
