@@ -12,6 +12,7 @@
 # =====================
 /outputs/
 /logs/
+/artifacts/
 
 # =====================
 # Local environments and caches

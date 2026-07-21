@@ -6,21 +6,52 @@ from ghm.granularity.study2 import PROMPT_TEMPLATE_ID, QUESTION_TYPE
 
 
 CLAIM_VERIFICATION_TEMPLATE_ID = PROMPT_TEMPLATE_ID
-CLAIM_VERIFICATION_SYSTEM = (
+CLAIM_VERIFICATION_V1_TEMPLATE_ID = PROMPT_TEMPLATE_ID
+CLAIM_VERIFICATION_V2_TEMPLATE_ID = "claim_verification_abc_definitions_v2"
+CLAIM_VERIFICATION_V1_SYSTEM = (
     "You are given a chest X-ray. "
     "Answer only one of: A. Supported, B. Contradicted, C. Not enough evidence. "
     "Return only A, B, or C."
 )
+CLAIM_VERIFICATION_V2_SYSTEM = """You are given a chest X-ray.
+Answer only one of:
+
+A. Supported:
+The radiographic evidence affirms the exact claim.
+
+B. Contradicted:
+The radiographic evidence supports the logical opposite of the claim.
+
+C. Not enough evidence:
+The radiographic evidence establishes neither the claim nor its logical opposite.
+
+Return only A, B, or C."""
+CLAIM_VERIFICATION_SYSTEM = CLAIM_VERIFICATION_V1_SYSTEM
 
 # Backward-compatible names for older imports.
 YES_NO_UNCERTAIN_TEMPLATE_ID = CLAIM_VERIFICATION_TEMPLATE_ID
 SUPPORTED_UNSUPPORTED_TEMPLATE_ID = CLAIM_VERIFICATION_TEMPLATE_ID
 
 
-def render_claim_verification_prompt(question: str) -> str:
+def render_claim_verification_prompt(
+    question: str,
+    *,
+    template_version: str = "v1",
+) -> str:
     """Render a Study 2 ABC claim-verification prompt."""
 
-    return f"{CLAIM_VERIFICATION_SYSTEM} Question: {question}"
+    _, system = claim_verification_template(template_version)
+    return f"{system}\n\nQuestion: {question}"
+
+
+def claim_verification_template(template_version: str) -> tuple[str, str]:
+    """Return the immutable Study 2 v1 or definition-only v2 template."""
+
+    if template_version == "v1":
+        return CLAIM_VERIFICATION_V1_TEMPLATE_ID, CLAIM_VERIFICATION_V1_SYSTEM
+    if template_version == "v2":
+        return CLAIM_VERIFICATION_V2_TEMPLATE_ID, CLAIM_VERIFICATION_V2_SYSTEM
+    raise ValueError("template_version must be 'v1' or 'v2'")
 
 
 def render_yes_no_uncertain_prompt(question: str) -> str:

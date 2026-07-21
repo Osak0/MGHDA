@@ -8,7 +8,7 @@ from typing import Any
 
 from ghm.granularity.common import read_jsonl, write_jsonl
 from ghm.prompts.templates import (
-    CLAIM_VERIFICATION_TEMPLATE_ID,
+    claim_verification_template,
     render_claim_verification_prompt,
 )
 
@@ -30,6 +30,8 @@ EVAL_METADATA_FIELDS = [
 
 def build_prompt_layers(
     items: list[dict[str, Any]],
+    *,
+    template_version: str = "v1",
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, int]]:
     """Build model inputs and evaluation metadata from linked model-ready items."""
 
@@ -48,7 +50,11 @@ def build_prompt_layers(
             skipped_missing_question += 1
             continue
 
-        prompt_template_id, prompt = render_prompt_for_item(item, str(question))
+        prompt_template_id, prompt = render_prompt_for_item(
+            item,
+            str(question),
+            template_version=template_version,
+        )
         item_id = item.get("item_id")
         model_inputs.append(
             {
@@ -83,10 +89,17 @@ def build_prompt_layers(
     return model_inputs, eval_metadata, summary
 
 
-def build_prompt_records(items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, int]]:
+def build_prompt_records(
+    items: list[dict[str, Any]],
+    *,
+    template_version: str = "v1",
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """Backward-compatible helper returning only model input records."""
 
-    model_inputs, _, summary = build_prompt_layers(items)
+    model_inputs, _, summary = build_prompt_layers(
+        items,
+        template_version=template_version,
+    )
     legacy_summary = {
         "input_items": summary["input_items"],
         "prompt_records": summary["model_input_records"],
@@ -96,10 +109,19 @@ def build_prompt_records(items: list[dict[str, Any]]) -> tuple[list[dict[str, An
     return model_inputs, legacy_summary
 
 
-def render_prompt_for_item(item: dict[str, Any], question: str) -> tuple[str, str]:
+def render_prompt_for_item(
+    item: dict[str, Any],
+    question: str,
+    *,
+    template_version: str = "v1",
+) -> tuple[str, str]:
     """Render the prompt matching the Study 2 ABC answer space."""
 
-    return CLAIM_VERIFICATION_TEMPLATE_ID, render_claim_verification_prompt(question)
+    template_id, _ = claim_verification_template(template_version)
+    return template_id, render_claim_verification_prompt(
+        question,
+        template_version=template_version,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -126,14 +148,24 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         help="Output evaluation metadata JSONL keyed by item_id.",
     )
+    parser.add_argument(
+        "--template-version",
+        choices=("v1", "v2"),
+        default="v1",
+        help="Study 2 prompt wording. v2 only adds definitions of A/B/C.",
+    )
     args = parser.parse_args(argv)
 
     items = read_jsonl(args.input)
-    model_inputs, eval_metadata, summary = build_prompt_layers(items)
+    model_inputs, eval_metadata, summary = build_prompt_layers(
+        items,
+        template_version=args.template_version,
+    )
     write_jsonl(model_inputs, args.model_inputs_output)
     write_jsonl(eval_metadata, args.eval_metadata_output)
     print(
         "Built prompt layers: "
+        f"template={claim_verification_template(args.template_version)[0]}, "
         f"input_items={summary['input_items']}, "
         f"model_inputs={summary['model_input_records']}, "
         f"eval_metadata={summary['eval_metadata_records']}, "

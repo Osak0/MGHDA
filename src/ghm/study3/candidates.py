@@ -91,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("outputs/study3/audits/study3_candidate_audit.json"),
+        default=Path("outputs/study3/v2/audits/study3_candidate_audit.json"),
     )
     args = parser.parse_args(argv)
     require_study3_output_path(args.output)

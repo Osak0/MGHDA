@@ -16,6 +16,11 @@ from ghm.granularity.study2 import (
 
 
 STUDY2_LABELS = {ANSWER_SUPPORTED, ANSWER_CONTRADICTED, ANSWER_NOT_ENOUGH}
+STUDY2_LABEL_ORDER = [
+    ANSWER_SUPPORTED,
+    ANSWER_CONTRADICTED,
+    ANSWER_NOT_ENOUGH,
+]
 
 
 def score_closed_qa_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -63,7 +68,9 @@ def score_closed_qa_row(row: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "item_id": row.get("item_id"),
+        "model_id": row.get("model_id") or row.get("model_name"),
         "model_name": row.get("model_name"),
+        "model_version": row.get("model_version"),
         "granularity": row.get("granularity"),
         "question_type": row.get("question_type"),
         "hallucination_probe": row.get("hallucination_probe"),
@@ -96,8 +103,19 @@ def summarize_scores(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "by_granularity": _summarize_by(rows, "granularity"),
         "by_claim_polarity": _summarize_by(rows, "claim_polarity"),
         "by_evidence_state": _summarize_by(rows, "evidence_state"),
+        "by_evidence_state_and_claim_polarity": _summarize_by_two_fields(
+            rows,
+            "evidence_state",
+            "claim_polarity",
+        ),
+        "by_granularity_evidence_state_and_claim_polarity": _summarize_by_fields(
+            rows,
+            ("granularity", "evidence_state", "claim_polarity"),
+        ),
         "by_answer_label": _summarize_by(rows, "answer_label"),
         "by_parsed_answer": _summarize_by(rows, "parsed_answer"),
+        "classification_metrics": _classification_metrics(rows),
+        "confusion_matrix": _confusion_matrix(rows),
     }
 
 
@@ -147,6 +165,109 @@ def _summarize_by(rows: list[dict[str, Any]], field: str) -> dict[str, Any]:
         key = str(row.get(field))
         groups.setdefault(key, []).append(row)
     return {key: _summarize_group(groups[key]) for key in sorted(groups)}
+
+
+def _summarize_by_two_fields(
+    rows: list[dict[str, Any]],
+    outer_field: str,
+    inner_field: str,
+) -> dict[str, dict[str, Any]]:
+    """Summarize a cross-tab without exposing row-level identifiers."""
+
+    return _summarize_by_fields(rows, (outer_field, inner_field))
+
+
+def _summarize_by_fields(
+    rows: list[dict[str, Any]],
+    fields: tuple[str, ...],
+) -> dict[str, Any]:
+    """Recursively summarize a multi-field cross-tab."""
+
+    if not fields:
+        raise ValueError("at least one grouping field is required")
+    if len(fields) == 1:
+        return _summarize_by(rows, fields[0])
+
+    outer_field = fields[0]
+    outer_groups: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        outer_key = str(row.get(outer_field))
+        outer_groups.setdefault(outer_key, []).append(row)
+    return {
+        outer_key: _summarize_by_fields(outer_groups[outer_key], fields[1:])
+        for outer_key in sorted(outer_groups)
+    }
+
+
+def _classification_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Compute aggregate three-class precision, recall, and F1."""
+
+    per_label: dict[str, dict[str, Any]] = {}
+    for label in STUDY2_LABEL_ORDER:
+        support = sum(1 for row in rows if row.get("answer_label") == label)
+        predicted = sum(1 for row in rows if row.get("parsed_answer") == label)
+        true_positive = sum(
+            1
+            for row in rows
+            if row.get("answer_label") == label and row.get("parsed_answer") == label
+        )
+        precision = true_positive / predicted if predicted else 0.0
+        recall = true_positive / support if support else 0.0
+        f1 = (
+            2 * precision * recall / (precision + recall)
+            if precision + recall
+            else 0.0
+        )
+        per_label[label] = {
+            "support": support,
+            "predicted": predicted,
+            "true_positive": true_positive,
+            "precision": round(precision, 6),
+            "recall": round(recall, 6),
+            "f1": round(f1, 6),
+        }
+
+    return {
+        "per_label": per_label,
+        "macro_precision": round(
+            sum(metrics["precision"] for metrics in per_label.values())
+            / len(STUDY2_LABEL_ORDER),
+            6,
+        ),
+        "macro_recall": round(
+            sum(metrics["recall"] for metrics in per_label.values())
+            / len(STUDY2_LABEL_ORDER),
+            6,
+        ),
+        "macro_f1": round(
+            sum(metrics["f1"] for metrics in per_label.values())
+            / len(STUDY2_LABEL_ORDER),
+            6,
+        ),
+    }
+
+
+def _confusion_matrix(rows: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    """Return aggregate gold-by-predicted counts, including invalid outputs."""
+
+    predicted_keys = [
+        *STUDY2_LABEL_ORDER,
+        "INVALID_OR_UNPARSED",
+    ]
+    matrix: dict[str, dict[str, int]] = {}
+    for gold_label in STUDY2_LABEL_ORDER:
+        gold_rows = [row for row in rows if row.get("answer_label") == gold_label]
+        counts = {key: 0 for key in predicted_keys}
+        for row in gold_rows:
+            parsed_answer = row.get("parsed_answer")
+            key = (
+                parsed_answer
+                if parsed_answer in STUDY2_LABELS
+                else "INVALID_OR_UNPARSED"
+            )
+            counts[key] += 1
+        matrix[gold_label] = counts
+    return matrix
 
 
 def _summarize_group(rows: list[dict[str, Any]]) -> dict[str, Any]:

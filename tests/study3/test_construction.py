@@ -21,12 +21,20 @@ def test_g1_two_no_findings_build_none_and_all_selected_answers():
         seed=42,
     )
 
-    present = next(row for row in items if row["query_relation"] == "present")
-    absent = next(row for row in items if row["query_relation"] == "absent")
+    present = next(
+        row
+        for row in items
+        if row["query_relation"] == "present" and row["prompt_framing"] == "state"
+    )
+    absent = next(
+        row
+        for row in items
+        if row["query_relation"] == "absent" and row["prompt_framing"] == "state"
+    )
     assert present["gold_selected_options"] == []
     assert absent["gold_selected_options"] == ["A", "B"]
     assert summary["excluded_conflict_findings"] == 0
-    assert item_summary["natural_items"] == 2
+    assert item_summary["natural_items"] == 4
 
 
 def test_conflicts_are_removed_without_converting_missing_to_no():
@@ -104,9 +112,9 @@ def test_natural_and_controlled_nested_variants_are_deterministic():
     items_b, _ = build_multiselect_items(selected_b, controlled_b, seed=42)
 
     assert items_a == items_b
-    assert len([row for row in items_a if row["variant"] == NATURAL]) == 2
+    assert len([row for row in items_a if row["variant"] == NATURAL]) == 4
     controlled = [row for row in items_a if row["variant"] == CONTROLLED]
-    assert len(controlled) == 8
+    assert len(controlled) == 16
     option_sets = {}
     for row in controlled:
         option_sets.setdefault(row["option_count"], row["options"])
@@ -116,8 +124,8 @@ def test_natural_and_controlled_nested_variants_are_deterministic():
 
 
 def test_target_budget_is_1800_items_per_granularity():
-    anchors = [_synthetic_anchor(index) for index in range(500)]
-    controlled_ids = {row["anchor_id"] for row in anchors[:100]}
+    anchors = [_synthetic_anchor(index) for index in range(250)]
+    controlled_ids = {row["anchor_id"] for row in anchors[:50]}
 
     items, summary = build_multiselect_items(
         anchors,
@@ -176,7 +184,7 @@ def _object():
 def _synthetic_anchor(index):
     return {
         "anchor_id": f"study3_g1_anchor_{index:04d}",
-        "experiment_id": "study3_multiselect_v1",
+        "experiment_id": "study3_multiselect_v2",
         "source_dataset": "ChestImaGenome",
         "patient_id": f"p{index}",
         "study_id": f"s{index}",

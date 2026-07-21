@@ -1,183 +1,151 @@
 # MGHDA
 
-Reproducible Study 2 and Study 3 experiments for granularity-dependent
-hallucination and visual-evidence consistency in medical multimodal models on
-chest X-rays.
+Reproducible Study 2/3 experiments for granularity-dependent hallucination and
+visual-evidence consistency in chest X-ray multimodal models.
 
-- Study 2 is the G1/G2 single-claim verification experiment defined in
-  [`docs/study2-prompt-construction.md`](docs/study2-prompt-construction.md).
-- Study 3 is the independent explicit anatomical-finding multi-select
-  experiment defined in
-  [`docs/study3-multiselect-construction.md`](docs/study3-multiselect-construction.md).
+All real images, prompts, evaluation metadata, model weights, checkpoints, and
+row-level outputs are restricted. They must remain outside Git.
 
-Study 3 reuses the G1/G2 taxonomy, but it has separate code, configuration,
-item IDs, generated data, transfer manifests, inference outputs, scoring, and
-figures. Study 2 artifacts are not valid Study 3 inputs.
+## Current experiments
 
-## Repository layout
+- Study 2 keeps `claim_verification_abc_v1` and adds the definition-only
+  `claim_verification_abc_definitions_v2`.
+- Study 2 uses one fixed 120-item paired v1/v2 ablation
+  (`G1/G2 × evidence state × claim polarity`, 10 per cell), a 960-item full v1
+  run, and a 960-item full v2 run.
+- Study 3 is `study3_multiselect_v2`. Every option set has four questions:
+  `state/evidence × present/absent`.
+- Study 3 uses 250 natural and 50 controlled anchors per granularity, producing
+  1,800 records for G1 and 1,800 for G2.
+- The same inputs are evaluated with:
+  `google/medgemma-4b-it`, `google/medgemma-1.5-4b-it`, and
+  `Qwen/Qwen3-VL-8B-Instruct`.
 
-```text
-configs/                 tracked, non-secret configuration examples
-docs/                    experiment specification and schemas
-scripts/                 ordered local-preparation and remote-run entrypoints
-src/ghm/data/            Chest ImaGenome audit, parsing, and image linking
-src/ghm/granularity/     optimized G1/G2 item construction
-src/ghm/prompts/         separated model-input/eval-metadata prompt builder
-src/ghm/inference/       MedGemma runner
-src/ghm/evaluation/      parsing, scoring, validation, and visualization
-src/ghm/migration/       preflight and direct-transfer utilities
-src/ghm/study3/          isolated Study 3 construction and evaluation
-scripts/study3/          isolated local and remote Study 3 entrypoints
-tests/                   synthetic tests only
-```
+The authoritative protocols are
+[`docs/study2-prompt-construction.md`](docs/study2-prompt-construction.md) and
+[`docs/study3-multiselect-construction.md`](docs/study3-multiselect-construction.md).
+The complete deployment checklist is
+[`docs/study2-study3-v2-deployment.md`](docs/study2-study3-v2-deployment.md).
 
-## Study 3 local data preparation
+## Trusted data-machine preparation
 
-Study 3 reads the already normalized Chest ImaGenome tables and only keeps
-MIMIC-CXR-JPG images that already exist under `files/`. It never downloads
-images. From PowerShell:
-
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-$env:MGHDA_DATA_ROOT = 'C:\Users\24540\data'
-$env:MGHDA_PYTHON = 'C:\path\to\python.exe' # omit when .venv exists
-.\scripts\study3\00_audit_candidates.ps1
-.\scripts\study3\01_build_items.ps1
-.\scripts\study3\02_build_prompts.ps1
-.\scripts\study3\03_prepare_transfer_manifest.ps1
-```
-
-Equivalent Linux/Git Bash commands are:
+`MGHDA_DATA_ROOT` is the existing data root that directly contains `files/`,
+`interim/`, `processed/`, `outputs/`, and `raw/`. Do not create an additional
+`MGHDA-private` directory.
 
 ```bash
-cp configs/study3_medgemma.env.example configs/study3_medgemma.env
+cp configs/study2_medgemma.env.example configs/study2_medgemma.env
+# Edit only MGHDA_DATA_ROOT for local preparation.
+
+bash scripts/02_build_prompts.sh
 bash scripts/study3/00_audit_candidates.sh
 bash scripts/study3/01_build_items.sh
 bash scripts/study3/02_build_prompts.sh
-bash scripts/study3/03_prepare_transfer_manifest.sh
+pytest -q
 ```
 
-The reference target is 1,800 prompts each for G1 and G2: 1,000 natural-option
-prompts plus 800 controlled K=2/3/4/5 prompts. Candidate shortages are reported
-and are never filled with unmentioned findings.
-
-Study 3 private artifacts are isolated under `interim/study3`,
-`processed/study3`, and `outputs/study3`. The transfer list is:
+The generated private layout is:
 
 ```text
-outputs/study3/transfer/study3_files_from.txt
+files/
+processed/study2/v1/
+processed/study2/v2/
+processed/study2/ablation/v1/
+processed/study2/ablation/v2/
+processed/study3/v2/
+outputs/transfer/
 ```
 
-Upload from the existing data root without duplicating the image tree:
+After committing a clean code revision, create both upload archives:
 
 ```bash
-rsync -av --partial \
-  --files-from=outputs/study3/transfer/study3_files_from.txt \
-  /path/to/data/ user@host:/path/to/data/
+bash scripts/package_release.sh
 ```
 
-The code checkout on the host must match the Git commit recorded in
-`study3_transfer_summary.json`.
+This creates a code archive and a private archive under
+`artifacts/release-<commit>/`, each with an outer SHA256 sidecar. The private
+archive contains only required versioned inputs, Study 3 items, deduplicated
+images, an aggregate manifest, and an internal checksum.
 
-## Study 3 remote inference
+## Remote replacement and inference
 
-On the GPU host, configure `configs/study3_medgemma.env`, then run:
+Upload the four archive/sidecar files to `incoming/<commit>/`. Then run the
+replacement script from the old checkout:
 
 ```bash
-bash scripts/study3/04_verify_and_preflight.sh
-bash scripts/study3/run_smoke.sh
-bash scripts/study3/run_full.sh
+bash scripts/deploy/replace_remote.sh /persistent/workspace <commit>
 ```
 
-`run_full.sh` performs resumable MedGemma inference, multi-select scoring,
-structural validation, aggregate reporting, and figures. Study 3 defaults to
-`RUN_NAME=medgemma_study3_multiselect_v1`; its scripts never source the Study 2
-environment file.
+It verifies both uploads before deleting the exact allowlisted old code/data
+directories. It preserves `models/`, `envs/`, and `incoming/`.
 
-## Study 2 current Windows data machine
-
-The data root is the existing `C:\Users\24540\data` directory. It directly
-contains `interim`, `processed`, `files`, `outputs`, and `raw`; scripts must not
-append another `data` component and do not require an `MGHDA-private` directory.
-
-From PowerShell, after creating a Python 3.10/3.11 environment with the project
-dependencies, run:
-
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-$env:MGHDA_PYTHON = "C:\path\to\python.exe" # omit when .venv exists
-.\scripts\00_audit_schema.ps1
-.\scripts\01_build_items.ps1
-.\scripts\02_build_prompts.ps1
-.\scripts\03_prepare_transfer_manifest.ps1
-```
-
-These commands write only inside the existing data root. The final command does
-not copy or move images; it writes `outputs\transfer\study2_files_from.txt`, a
-SHA256 manifest, and an aggregate summary. All paths in generated prompt JSONL
-are portable and relative to the data root, beginning with `files/`.
-
-## Study 2 trusted data machine
-
-On Linux or Git Bash, copy the environment example and use the equivalent shell
-entrypoints:
+Activate the existing environment, copy `configs/models.env.example` to the
+ignored `configs/models.env`, and run:
 
 ```bash
-bash scripts/00_audit_schema.sh
-bash scripts/01_build_items.sh
-bash scripts/02_build_prompts.sh
-bash scripts/prepare_inference_bundle.sh
+bash scripts/preflight_all_models.sh
+pytest -q
+bash scripts/dry_run_all_inputs.sh
 ```
 
-The linked Study 2 set defaults to 960 model inputs: 480 each for G1 and G2.
-Sampling keeps positive/negative claim pairs and balances affirmed, negated, and
-not-enough-evidence pairs, using only images already present under `files/`.
-If candidate construction already completed but linking was interrupted, resume
-without rebuilding candidates:
+For each model, export its canonical ID and local directory. Example:
 
 ```bash
-bash scripts/01b_link_and_sample_items.sh
+export MODEL_NAME='Qwen/Qwen3-VL-8B-Instruct'
+export MODEL_PATH='/persistent/workspace/models/Qwen/Qwen3-VL-8B-Instruct'
 ```
 
-Upload directly from the existing data root with the generated file list. No
-second private-data directory is needed:
+Study 2:
 
 ```bash
-rsync -av --partial --files-from=outputs/transfer/study2_files_from.txt \
-  /path/to/data/ user@new-host:/path/to/data/
+STUDY2_SET=full_v1 RUN_PHASE=ablation RUN_NAME=qwen3vl8b_study2_v1_full \
+  bash scripts/study2/run.sh
+STUDY2_SET=full_v2 RUN_PHASE=ablation RUN_NAME=qwen3vl8b_study2_v2_full \
+  bash scripts/study2/run.sh
+V1_RUN_NAME=qwen3vl8b_study2_v1_full \
+V2_RUN_NAME=qwen3vl8b_study2_v2_full \
+  bash scripts/study2/compare_ablation.sh
+STUDY2_SET=full_v1 RUN_PHASE=full RUN_NAME=qwen3vl8b_study2_v1_full \
+  bash scripts/study2/run.sh
+STUDY2_SET=full_v2 RUN_PHASE=full RUN_NAME=qwen3vl8b_study2_v2_full \
+  bash scripts/study2/run.sh
 ```
 
-Images, prompts, eval metadata, checksums, and patient-linked outputs remain
-restricted and must never be committed to GitHub.
-
-## Study 2 remote GPU machine
-
-Point `MGHDA_DATA_ROOT` at the transferred data root, configure the local
-MedGemma 4B IT path, then run:
+The same staged matrix for all three configured models is:
 
 ```bash
-bash scripts/verify_inference_bundle.sh
-bash scripts/preflight_medgemma.sh
-bash scripts/dry_run_medgemma_inputs.sh
-bash scripts/run_medgemma_smoke.sh
-bash scripts/run_medgemma_full.sh
+bash scripts/run_three_models_phase.sh study2-ablation
+# Inspect the three paired comparison summaries before continuing.
+bash scripts/run_three_models_phase.sh study2-full
+bash scripts/run_three_models_phase.sh study3-smoke
+# Inspect all smoke validations before continuing.
+bash scripts/run_three_models_phase.sh study3-full
 ```
 
-The smoke and full wrappers each run inference, scoring, and structural
-validation with the same exported run name; the full wrapper also creates the
-aggregate figures. Standalone score, validation, and visualization scripts
-remain available for re-analysis.
+Study 3:
 
-The runner checkpoints each item and supports resume. Full row-level outputs
-remain private; only aggregate summaries without identifiers or paths are safe
-to share.
+```bash
+RUN_NAME=qwen3vl8b_study3_v2_smoke bash scripts/study3/run_smoke.sh
+RUN_NAME=qwen3vl8b_study3_v2_full bash scripts/study3/run_full.sh
+```
 
-## Reference environment
+Use a different `RUN_NAME` for every model and Study 2 template. The ablation
+and full phases deliberately share that run's checkpoint, so the first 120
+successful items are not inferred twice. Study 3 smoke/full use different run
+names. Resume skips successful items and retries failed items.
+
+## Environment
 
 - Python 3.10 or 3.11
-- PyTorch 2.5.1 with CUDA 12.1 (install separately for the platform)
-- Transformers 4.50.3
-- Accelerate 1.13.0
-- Pillow, PyArrow, Matplotlib
+- CUDA-enabled PyTorch appropriate for the remote driver
+- Transformers 4.57.0 or newer
+- Accelerate 1.13.0 or newer
+- Pillow, PyArrow, Matplotlib, ModelScope, Pytest
 
-The preflight command checks the actual platform and never downloads a model.
+The preflight never downloads models. Model downloads are explicit:
+
+```bash
+bash scripts/models/download_modelscope.sh \
+  google/medgemma-1.5-4b-it \
+  /persistent/workspace/models/google/medgemma-1.5-4b-it
+```

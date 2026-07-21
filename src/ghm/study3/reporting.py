@@ -69,6 +69,45 @@ def render_figures(summary: dict[str, Any], output_dir: Path) -> list[Path]:
         figure.savefig(path, dpi=180)
         plt.close(figure)
         paths.append(path)
+
+    framing_relation = summary.get("by_prompt_framing_and_query_relation", {})
+    if all(framing in framing_relation for framing in ("state", "evidence")):
+        relations = ("present", "absent")
+        positions = list(range(len(relations)))
+        width = 0.36
+        figure, axis = plt.subplots(figsize=(7, 4))
+        axis.bar(
+            [position - width / 2 for position in positions],
+            [
+                framing_relation["state"].get(relation, {}).get(
+                    "mean_hamming_accuracy"
+                )
+                for relation in relations
+            ],
+            width,
+            label="state",
+        )
+        axis.bar(
+            [position + width / 2 for position in positions],
+            [
+                framing_relation["evidence"].get(relation, {}).get(
+                    "mean_hamming_accuracy"
+                )
+                for relation in relations
+            ],
+            width,
+            label="evidence",
+        )
+        axis.set_xticks(positions, relations)
+        axis.set_ylim(0, 1)
+        axis.set_ylabel("Mean Hamming accuracy")
+        axis.set_title("Study 3 framing by query relation")
+        axis.legend()
+        figure.tight_layout()
+        path = output_dir / "study3_accuracy_by_framing_relation.png"
+        figure.savefig(path, dpi=180)
+        plt.close(figure)
+        paths.append(path)
     return paths
 
 

@@ -1,4 +1,4 @@
-"""Run MedGemma image-text inference over model-input prompt JSONL.
+"""Run a local Hugging Face image-text model over model-input prompt JSONL.
 
 This runner is intended for the remote GPU machine. It keeps the same raw
 response schema as the mock runner so existing parsing and scoring code can be
@@ -54,6 +54,7 @@ def build_error_row(
 
     return {
         "item_id": record.get("item_id"),
+        "model_id": model_name,
         "model_name": model_name,
         "model_version": model_version,
         "image_path": record.get("image_path"),
@@ -88,6 +89,16 @@ def dry_run_rows(
     """Validate prompt, metadata, and image paths without loading the model."""
 
     metadata_index = metadata_by_item_id(eval_metadata_rows)
+    prompt_ids = [
+        str(record["item_id"])
+        for record in prompt_records
+        if record.get("item_id") is not None
+    ]
+    metadata_ids = [
+        str(record["item_id"])
+        for record in eval_metadata_rows
+        if record.get("item_id") is not None
+    ]
     rows: list[dict[str, Any]] = []
     missing_metadata = 0
     missing_image_path = 0
@@ -117,6 +128,10 @@ def dry_run_rows(
         )
     return rows, {
         "prompt_records": len(prompt_records),
+        "eval_metadata_records": len(eval_metadata_rows),
+        "duplicate_prompt_item_ids": len(prompt_ids) - len(set(prompt_ids)),
+        "duplicate_metadata_item_ids": len(metadata_ids) - len(set(metadata_ids)),
+        "unexpected_metadata": len(set(metadata_ids) - set(prompt_ids)),
         "missing_metadata": missing_metadata,
         "missing_image_path": missing_image_path,
         "existing_images": existing_images,
@@ -141,18 +156,22 @@ def run_medgemma(
     checkpoint_path: Path | None = None,
     resume: bool = False,
 ) -> list[dict[str, Any]]:
-    """Run MedGemma generation and return raw response rows."""
+    """Run deterministic local multimodal generation and return raw rows."""
 
     if batch_size != 1:
-        raise ValueError("MedGemma runner currently supports --batch-size 1 only")
+        raise ValueError("multimodal runner currently supports --batch-size 1 only")
 
     try:
         import torch
         from PIL import Image
-        from transformers import AutoModelForImageTextToText, AutoProcessor
+        from transformers import (
+            AutoModelForImageTextToText,
+            AutoModelForMultimodalLM,
+            AutoProcessor,
+        )
     except ModuleNotFoundError as exc:
         raise RuntimeError(
-            "MedGemma inference requires torch, pillow, and transformers installed "
+            "Multimodal inference requires torch, pillow, and transformers installed "
             "on the remote environment."
         ) from exc
 
@@ -167,7 +186,12 @@ def run_medgemma(
     }
     if device == "auto":
         load_kwargs["device_map"] = "auto"
-    model = AutoModelForImageTextToText.from_pretrained(str(model_path), **load_kwargs)
+    model_class = (
+        AutoModelForMultimodalLM
+        if model_name == "Qwen/Qwen3-VL-8B-Instruct"
+        else AutoModelForImageTextToText
+    )
+    model = model_class.from_pretrained(str(model_path), **load_kwargs)
     if device in {"cuda", "cpu"}:
         model.to(device)
     model.eval()
@@ -194,6 +218,12 @@ def run_medgemma(
         item_id = str(record.get("item_id"))
         previous = checkpoint_rows.get(item_id)
         if previous is not None and previous.get("runtime", {}).get("status") == "success":
+            _validate_resumed_row(
+                previous,
+                record,
+                model_name=model_name,
+                generation_config=generation_config,
+            )
             outputs.append(previous)
             continue
         started = time.time()
@@ -239,6 +269,7 @@ def run_medgemma(
             )
             row = {
                     "item_id": record.get("item_id"),
+                    "model_id": model_name,
                     "model_name": model_name,
                     "model_version": str(model_path),
                     "image_path": record.get("image_path"),
@@ -307,6 +338,24 @@ def _latest_rows_by_item_id(path: Path | None) -> dict[str, dict[str, Any]]:
     return rows
 
 
+def _validate_resumed_row(
+    previous: dict[str, Any],
+    current_input: dict[str, Any],
+    *,
+    model_name: str,
+    generation_config: dict[str, Any],
+) -> None:
+    """Reject a successful checkpoint row from another model or configuration."""
+
+    previous_model = previous.get("model_id") or previous.get("model_name")
+    if previous_model != model_name:
+        raise ValueError("checkpoint model identity does not match current run")
+    if previous.get("prompt_template_id") != current_input.get("prompt_template_id"):
+        raise ValueError("checkpoint prompt template does not match current input")
+    if previous.get("generation_config") != generation_config:
+        raise ValueError("checkpoint generation configuration does not match current run")
+
+
 def _seed_torch(torch: Any, seed: int) -> None:
     torch.manual_seed(seed)
     if torch.cuda.is_available():
@@ -367,13 +416,17 @@ def generate_one(
 def main(argv: list[str] | None = None) -> int:
     """CLI entrypoint."""
 
-    parser = argparse.ArgumentParser(description="Run MedGemma on model-input JSONL.")
+    parser = argparse.ArgumentParser(description="Run a local multimodal model on JSONL.")
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--eval-metadata", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--model-path", type=Path, required=True)
     parser.add_argument("--data-root", type=Path, default=None)
-    parser.add_argument("--model-name", default="medgemma")
+    parser.add_argument(
+        "--model-name",
+        required=True,
+        help="Canonical model ID recorded in every output row.",
+    )
     parser.add_argument("--device", default="cuda", choices=["cuda", "cpu", "auto"])
     parser.add_argument("--dtype", default="bfloat16", choices=["bfloat16", "float16", "float32"])
     parser.add_argument("--batch-size", type=int, default=1)
@@ -423,13 +476,21 @@ def main(argv: list[str] | None = None) -> int:
         )
         write_jsonl(rows, args.output)
         print(
-            "MedGemma dry run: "
+            "Multimodal dry run: "
             f"prompt_records={summary['prompt_records']}, "
             f"existing_images={summary['existing_images']}, "
             f"missing_images={summary['missing_images']}, "
             f"missing_metadata={summary['missing_metadata']}"
         )
-        return 0
+        failure_fields = (
+            "duplicate_prompt_item_ids",
+            "duplicate_metadata_item_ids",
+            "unexpected_metadata",
+            "missing_metadata",
+            "missing_image_path",
+            "missing_images",
+        )
+        return 1 if any(summary[field] for field in failure_fields) else 0
 
     try:
         outputs = run_medgemma(
@@ -455,7 +516,7 @@ def main(argv: list[str] | None = None) -> int:
     success = sum(1 for row in outputs if row.get("runtime", {}).get("status") == "success")
     failed = len(outputs) - success
     print(
-        "Ran MedGemma inference: "
+        "Ran multimodal inference: "
         f"inputs={len(prompt_records)}, outputs={len(outputs)}, "
         f"success={success}, failed={failed}"
     )

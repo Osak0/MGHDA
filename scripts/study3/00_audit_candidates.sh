@@ -9,7 +9,7 @@ require_study3_identity
 : "${MIMIC_JPG_FILES_ROOT:=$MGHDA_DATA_ROOT/files}"
 
 cd "$MGHDA_ROOT"
-mkdir -p "$MGHDA_DATA_ROOT/outputs/study3/audits"
+mkdir -p "$MGHDA_DATA_ROOT/outputs/study3/v2/audits"
 python -m ghm.study3.candidates \
   --attributes "$MGHDA_DATA_ROOT/interim/ci_attribute_assertions.parquet" \
   --objects "$MGHDA_DATA_ROOT/interim/ci_objects.parquet" \
@@ -17,4 +17,4 @@ python -m ghm.study3.candidates \
   --mimic-split "$MIMIC_SPLIT_CSV" \
   --files-root "$MIMIC_JPG_FILES_ROOT" \
   --image-path-root "files" \
-  --output "$MGHDA_DATA_ROOT/outputs/study3/audits/study3_candidate_audit.json"
+  --output "$MGHDA_DATA_ROOT/outputs/study3/v2/audits/study3_candidate_audit.json"

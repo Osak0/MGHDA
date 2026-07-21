@@ -22,9 +22,9 @@ require_env() {
 }
 
 require_study3_identity() {
-  : "${STUDY3_EXPERIMENT_ID:=study3_multiselect_v1}"
-  if [[ "$STUDY3_EXPERIMENT_ID" != "study3_multiselect_v1" ]]; then
-    echo "error: STUDY3_EXPERIMENT_ID must be study3_multiselect_v1" >&2
+  : "${STUDY3_EXPERIMENT_ID:=study3_multiselect_v2}"
+  if [[ "$STUDY3_EXPERIMENT_ID" != "study3_multiselect_v2" ]]; then
+    echo "error: STUDY3_EXPERIMENT_ID must be study3_multiselect_v2" >&2
     return 1
   fi
 }

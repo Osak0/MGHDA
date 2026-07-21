@@ -9,8 +9,11 @@ from typing import Any
 from ghm.granularity.common import read_jsonl, write_jsonl
 from ghm.study3.constants import (
     ABSENT,
+    EVIDENCE,
     EXPERIMENT_ID,
     PRESENT,
+    PROMPT_FRAMINGS,
+    STATE,
     require_study3_experiment,
     require_study3_item_id,
     require_study3_output_path,
@@ -30,6 +33,7 @@ EVAL_METADATA_FIELDS = (
     "experiment_id",
     "granularity",
     "question_type",
+    "prompt_framing",
     "query_relation",
     "variant",
     "controlled_k",
@@ -87,6 +91,12 @@ def build_prompt_layers(
         "absent_prompts": sum(
             row["query_relation"] == ABSENT for row in eval_metadata
         ),
+        "state_prompts": sum(
+            row["prompt_framing"] == STATE for row in eval_metadata
+        ),
+        "evidence_prompts": sum(
+            row["prompt_framing"] == EVIDENCE for row in eval_metadata
+        ),
     }
 
 
@@ -94,8 +104,9 @@ def render_prompt(item: dict[str, Any]) -> tuple[str, str]:
     """Render one strict multiple-select prompt."""
 
     relation = item["query_relation"]
+    framing = item["prompt_framing"]
     relation_word = "present" if relation == PRESENT else "absent"
-    template_id = f"study3_multiselect_{relation}_v1"
+    template_id = f"study3_multiselect_{framing}_{relation}_v2"
     if item["granularity"] == "G1_finding_existence":
         scope = "in this chest X-ray"
     else:
@@ -107,10 +118,29 @@ def render_prompt(item: dict[str, Any]) -> tuple[str, str]:
         f"{option['option_id']}. {option['label_name']}"
         for option in item["options"]
     )
+    if framing == STATE:
+        instruction = (
+            "Considering only the listed findings, select all findings that are "
+            f"{relation_word} {scope}."
+        )
+    elif framing == EVIDENCE and relation == PRESENT:
+        instruction = (
+            "Considering only the listed findings, select all findings for which "
+            f"the radiographic evidence supports presence {scope}."
+        )
+    elif framing == EVIDENCE and relation == ABSENT:
+        instruction = (
+            "Considering only the listed findings, select all findings for which "
+            f"the radiographic evidence explicitly supports absence {scope}.\n\n"
+            "Evidence supporting absence means that the finding is ruled out by "
+            "the radiographic evidence. It does not mean that the finding is "
+            "merely unmentioned."
+        )
+    else:
+        raise ValueError("invalid Study 3 prompt framing or query relation")
     prompt = (
         "This is a multiple-select question.\n"
-        "Considering only the listed findings, select all findings that are "
-        f"{relation_word} {scope}.\n\n"
+        f"{instruction}\n\n"
         f"{option_lines}\n\n"
         "Reply only with comma-separated option letters, or NONE if no option "
         "applies."
@@ -125,6 +155,8 @@ def validate_item(item: dict[str, Any]) -> None:
     require_study3_item_id(item.get("item_id"))
     if item.get("query_relation") not in {PRESENT, ABSENT}:
         raise ValueError("Study 3 query_relation must be present or absent")
+    if item.get("prompt_framing") not in set(PROMPT_FRAMINGS):
+        raise ValueError("Study 3 prompt_framing must be state or evidence")
     options = item.get("options")
     if not isinstance(options, list) or len(options) < 2:
         raise ValueError("Study 3 item requires at least two options")
@@ -159,7 +191,9 @@ def main(argv: list[str] | None = None) -> int:
         "Built Study 3 prompt layers: "
         f"inputs={summary['model_inputs']}, "
         f"present={summary['present_prompts']}, "
-        f"absent={summary['absent_prompts']}"
+        f"absent={summary['absent_prompts']}, "
+        f"state={summary['state_prompts']}, "
+        f"evidence={summary['evidence_prompts']}"
     )
     return 0
 

@@ -23,6 +23,7 @@ from ghm.study3.constants import (
 
 SUMMARY_DIMENSIONS = (
     "granularity",
+    "prompt_framing",
     "query_relation",
     "variant",
     "option_count",
@@ -72,6 +73,7 @@ def score_multiselect_rows(
                 "experiment_id",
                 "granularity",
                 "question_type",
+                "prompt_framing",
                 "query_relation",
                 "variant",
                 "controlled_k",
@@ -87,6 +89,7 @@ def score_multiselect_rows(
         }
         row.update(
             {
+                "model_id": raw.get("model_id") or raw.get("model_name"),
                 "model_name": raw.get("model_name"),
                 "model_version": raw.get("model_version"),
                 "raw_response": raw.get("raw_response"),
@@ -117,13 +120,22 @@ def summarize_scores(
     }
     for dimension in SUMMARY_DIMENSIONS:
         summary[f"by_{dimension}"] = _summarize_by(rows, dimension)
+    summary["by_prompt_framing_and_query_relation"] = _summarize_cross(
+        rows,
+        "prompt_framing",
+        "query_relation",
+    )
     summary["by_option_position"] = _summarize_option_positions(rows)
     summary["complement_consistency"] = _complement_consistency(rows)
-    summary["controlled_k_paired_bootstrap"] = _controlled_k_bootstrap(
-        rows,
-        samples=bootstrap_samples,
-        seed=bootstrap_seed,
-    )
+    summary["framing_agreement"] = _framing_agreement(rows)
+    summary["controlled_k_paired_bootstrap"] = {
+        framing: _controlled_k_bootstrap(
+            [row for row in rows if row.get("prompt_framing") == framing],
+            samples=bootstrap_samples,
+            seed=bootstrap_seed,
+        )
+        for framing in ("state", "evidence")
+    }
     return summary
 
 
@@ -216,6 +228,20 @@ def _summarize_by(
     }
 
 
+def _summarize_cross(
+    rows: list[dict[str, Any]],
+    first: str,
+    second: str,
+) -> dict[str, Any]:
+    groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        groups[str(row.get(first))].append(row)
+    return {
+        key: _summarize_by(group_rows, second)
+        for key, group_rows in sorted(groups.items())
+    }
+
+
 def _summarize_group(rows: list[dict[str, Any]]) -> dict[str, Any]:
     valid = [row for row in rows if row.get("valid_response") is True]
     tp = sum(int(row.get("true_positive", 0)) for row in valid)
@@ -272,16 +298,54 @@ def _summarize_option_positions(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _complement_consistency(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    result = _complement_group(rows)
-    for dimension in ("granularity", "variant", "option_count"):
-        groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
-        for row in rows:
-            groups[str(row.get(dimension))].append(row)
-        result[f"by_{dimension}"] = {
-            key: _complement_group(group_rows)
-            for key, group_rows in sorted(groups.items())
-        }
+    result: dict[str, Any] = {"by_prompt_framing": {}}
+    for framing in ("state", "evidence"):
+        framing_rows = [
+            row for row in rows if row.get("prompt_framing") == framing
+        ]
+        framing_result = _complement_group(framing_rows)
+        for dimension in ("granularity", "variant", "option_count"):
+            groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+            for row in framing_rows:
+                groups[str(row.get(dimension))].append(row)
+            framing_result[f"by_{dimension}"] = {
+                key: _complement_group(group_rows)
+                for key, group_rows in sorted(groups.items())
+            }
+        result["by_prompt_framing"][framing] = framing_result
     return result
+
+
+def _framing_agreement(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Measure state/evidence prediction agreement for the same set and relation."""
+
+    pairs: dict[tuple[str, str], dict[str, dict[str, Any]]] = defaultdict(dict)
+    for row in rows:
+        if row.get("valid_response") is True:
+            key = (str(row.get("option_set_id")), str(row.get("query_relation")))
+            pairs[key][str(row.get("prompt_framing"))] = row
+    paired = 0
+    exact = 0
+    decisions = 0
+    agreeing = 0
+    for framing_rows in pairs.values():
+        if set(framing_rows) != {"state", "evidence"}:
+            continue
+        paired += 1
+        state = set(framing_rows["state"]["parsed_selected_options"])
+        evidence = set(framing_rows["evidence"]["parsed_selected_options"])
+        option_ids = {
+            str(option["option_id"]) for option in framing_rows["state"]["options"]
+        }
+        exact += int(state == evidence)
+        decisions += len(option_ids)
+        agreeing += sum((option in state) == (option in evidence) for option in option_ids)
+    return {
+        "valid_paired_questions": paired,
+        "exact_set_agreement": exact / paired if paired else None,
+        "option_decisions": decisions,
+        "option_agreement": agreeing / decisions if decisions else None,
+    }
 
 
 def _complement_group(rows: list[dict[str, Any]]) -> dict[str, Any]:

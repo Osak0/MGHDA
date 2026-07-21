@@ -1,6 +1,7 @@
 from ghm.study3.answers import parse_multiselect_answer
 from ghm.study3.prompts import build_prompt_layers
 from ghm.study3.scoring import score_multiselect_rows, summarize_scores
+from ghm.study3.smoke import select_smoke_rows
 
 
 def test_parser_accepts_sets_and_none_and_rejects_ambiguous_answers():
@@ -14,7 +15,7 @@ def test_parser_accepts_sets_and_none_and_rejects_ambiguous_answers():
 
 
 def test_prompt_layer_contains_no_gold_or_polarity():
-    item = _item(query_relation="absent", gold=["A", "B"])
+    item = _item(query_relation="absent", gold=["A", "B"], prompt_framing="evidence")
 
     model_inputs, metadata, summary = build_prompt_layers([item])
 
@@ -27,14 +28,15 @@ def test_prompt_layer_contains_no_gold_or_polarity():
     }
     assert "gold_selected_options" not in model_inputs[0]
     assert metadata[0]["gold_selected_options"] == ["A", "B"]
-    assert "select all findings that are absent in the right lung" in model_inputs[0]["prompt"]
+    assert "radiographic evidence explicitly supports absence in the right lung" in model_inputs[0]["prompt"]
+    assert "merely unmentioned" in model_inputs[0]["prompt"]
     assert summary["absent_prompts"] == 1
 
 
 def test_scoring_reports_option_and_exact_metrics():
     metadata = [
-        _metadata("study3_g2_ms_a", "present", [], "set-a"),
-        _metadata("study3_g2_ms_b", "absent", ["A", "B"], "set-a"),
+        _metadata("study3_g2_ms_a", "present", [], "set-a", "state"),
+        _metadata("study3_g2_ms_b", "absent", ["A", "B"], "set-a", "state"),
     ]
     raw = [
         _raw("study3_g2_ms_a", "NONE"),
@@ -48,16 +50,51 @@ def test_scoring_reports_option_and_exact_metrics():
     assert scored[1]["hamming_accuracy"] == 0.5
     assert summary["overall"]["exact_set_accuracy"] == 0.5
     assert summary["overall"]["micro_hamming_accuracy"] == 0.75
-    assert summary["complement_consistency"]["option_complement_accuracy"] == 0.5
+    assert summary["complement_consistency"]["by_prompt_framing"]["state"][
+        "option_complement_accuracy"
+    ] == 0.5
 
 
-def _item(*, query_relation, gold):
+def test_fixed_smoke_has_40_coverage_cells():
+    metadata = []
+    model_inputs = []
+    index = 0
+    for granularity in ("G1_finding_existence", "G2_anatomical_localization"):
+        for framing in ("state", "evidence"):
+            for relation in ("present", "absent"):
+                for variant_key in ("natural", 2, 3, 4, 5):
+                    index += 1
+                    item_id = f"study3_smoke_{index}"
+                    variant = "natural" if variant_key == "natural" else "controlled"
+                    metadata.append(
+                        {
+                            "item_id": item_id,
+                            "granularity": granularity,
+                            "prompt_framing": framing,
+                            "query_relation": relation,
+                            "variant": variant,
+                            "controlled_k": None if variant == "natural" else variant_key,
+                        }
+                    )
+                    model_inputs.append({"item_id": item_id, "prompt": "synthetic"})
+
+    selected_inputs, selected_metadata, summary = select_smoke_rows(
+        model_inputs,
+        metadata,
+    )
+
+    assert len(selected_inputs) == len(selected_metadata) == 40
+    assert summary["coverage_cells"] == 40
+
+
+def _item(*, query_relation, gold, prompt_framing="state"):
     return {
         "item_id": "study3_g2_ms_test",
-        "experiment_id": "study3_multiselect_v1",
+        "experiment_id": "study3_multiselect_v2",
         "image_path": "files/p10/s1/a.jpg",
         "granularity": "G2_anatomical_localization",
-        "question_type": "anatomicalfinding_multiselect_v1",
+        "question_type": "anatomicalfinding_multiselect_v2",
+        "prompt_framing": prompt_framing,
         "query_relation": query_relation,
         "variant": "natural",
         "controlled_k": None,
@@ -79,8 +116,12 @@ def _item(*, query_relation, gold):
     }
 
 
-def _metadata(item_id, relation, gold, option_set_id):
-    item = _item(query_relation=relation, gold=gold)
+def _metadata(item_id, relation, gold, option_set_id, prompt_framing):
+    item = _item(
+        query_relation=relation,
+        gold=gold,
+        prompt_framing=prompt_framing,
+    )
     item["item_id"] = item_id
     item["option_set_id"] = option_set_id
     return item

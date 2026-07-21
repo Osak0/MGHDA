@@ -11,6 +11,7 @@ from ghm.migration.bundle import (
     verify_checksum_file,
 )
 from ghm.migration.preflight import collect_preflight
+from ghm.migration.archive import inspect_archive, verify_outer_checksum
 
 
 def test_root_data_ignore_does_not_hide_source_package():
@@ -137,6 +138,25 @@ def test_run_validation_rejects_missing_and_duplicate_rows():
     assert "item_id_set_mismatch:scored" in result["failures"]
 
 
+def test_run_validation_rejects_mixed_model_identities():
+    prompts = [_prompt("a", "files/image.jpg"), _prompt("b", "files/image.jpg")]
+    metadata = [_metadata("a"), _metadata("b")]
+    raw = [
+        _raw("a", status="success"),
+        {**_raw("b", status="success"), "model_id": "Qwen/Qwen3-VL-8B-Instruct"},
+    ]
+    result = validate_run_layers(
+        model_inputs=prompts,
+        eval_metadata=metadata,
+        raw=raw,
+        parsed=raw,
+        scored=[{"item_id": "a"}, {"item_id": "b"}],
+    )
+
+    assert result["valid"] is False
+    assert "model_identity_mismatch" in result["failures"]
+
+
 def test_preflight_fails_closed_when_model_is_absent(tmp_path):
     data_root = tmp_path / "bundle"
     data_root.mkdir()
@@ -147,6 +167,25 @@ def test_preflight_fails_closed_when_model_is_absent(tmp_path):
     assert "model_directory_missing" in result["failures"]
     assert "data_root" not in result
     assert "model_path" not in result
+
+
+def test_archive_inspection_and_outer_checksum_reject_tampering(tmp_path):
+    import hashlib
+    import tarfile
+
+    source = tmp_path / "safe.txt"
+    source.write_text("safe", encoding="utf-8")
+    archive = tmp_path / "bundle.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        tar.add(source, arcname="processed/safe.txt")
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    sidecar = tmp_path / "bundle.tar.gz.sha256"
+    sidecar.write_text(f"{digest}  {archive.name}\n", encoding="utf-8")
+
+    assert inspect_archive(archive)["files"] == 1
+    assert verify_outer_checksum(archive, sidecar) is True
+    archive.write_bytes(archive.read_bytes() + b"tamper")
+    assert verify_outer_checksum(archive, sidecar) is False
 
 
 def test_in_place_transfer_manifest_creates_no_image_copy(tmp_path):
@@ -203,6 +242,8 @@ def _metadata(item_id):
 def _raw(item_id, *, status):
     return {
         "item_id": item_id,
+        "model_id": "google/medgemma-4b-it",
+        "model_name": "google/medgemma-4b-it",
         "generation_config": {"seed": 42, "temperature": 0.0},
         "runtime": {"status": status},
     }

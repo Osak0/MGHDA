@@ -75,7 +75,23 @@ def test_mock_inference_parse_and_score_oracle_pipeline():
     assert summary["overall"]["accuracy"] == 1.0
     assert summary["by_claim_polarity"][CLAIM_POSITIVE]["items"] == 2
     assert summary["by_claim_polarity"][CLAIM_NEGATIVE]["items"] == 1
+    assert summary["by_evidence_state_and_claim_polarity"][EVIDENCE_AFFIRMED][
+        CLAIM_POSITIVE
+    ]["items"] == 1
+    assert summary["by_evidence_state_and_claim_polarity"][EVIDENCE_AFFIRMED][
+        CLAIM_NEGATIVE
+    ]["items"] == 1
+    assert summary["by_evidence_state_and_claim_polarity"][EVIDENCE_NOT_ENOUGH][
+        CLAIM_POSITIVE
+    ]["items"] == 1
+    assert summary["by_granularity_evidence_state_and_claim_polarity"][
+        "G1_finding_existence"
+    ][EVIDENCE_AFFIRMED][CLAIM_POSITIVE]["items"] == 1
     assert summary["by_answer_label"][ANSWER_NOT_ENOUGH]["items"] == 1
+    assert summary["classification_metrics"]["macro_f1"] == 1.0
+    assert summary["confusion_matrix"][ANSWER_SUPPORTED][ANSWER_SUPPORTED] == 1
+    assert summary["confusion_matrix"][ANSWER_CONTRADICTED][ANSWER_CONTRADICTED] == 1
+    assert summary["confusion_matrix"][ANSWER_NOT_ENOUGH][ANSWER_NOT_ENOUGH] == 1
 
 
 def test_oracle_mock_requires_eval_metadata():
@@ -115,6 +131,10 @@ def test_scoring_maps_study2_errors_and_invalid_cases():
     assert summary["overall"]["h1_count"] == 1
     assert summary["overall"]["h2_count"] == 1
     assert summary["overall"]["invalid_count"] == 1
+    assert summary["classification_metrics"]["per_label"][ANSWER_CONTRADICTED][
+        "recall"
+    ] == 0.0
+    assert summary["confusion_matrix"][ANSWER_SUPPORTED]["INVALID_OR_UNPARSED"] == 1
 
 
 def test_jsonl_pipeline_helpers_and_file_summary(tmp_path):
@@ -132,6 +152,25 @@ def test_jsonl_pipeline_helpers_and_file_summary(tmp_path):
     assert loaded == scored
     assert summary["overall"]["items"] == 1
     assert summary["overall"]["accuracy"] == 1.0
+    assert summary["data_quality"] == {
+        "input_files": 1,
+        "records": 1,
+        "unique_item_ids": 1,
+        "missing_item_id_count": 0,
+        "duplicate_item_id_count": 0,
+        "null_field_counts": {
+            "item_id": 0,
+            "granularity": 0,
+            "claim_polarity": 0,
+            "evidence_state": 0,
+            "answer_label": 0,
+            "parsed_answer": 0,
+            "score": 0,
+            "is_correct": 0,
+        },
+        "unexpected_answer_label_count": 0,
+        "unexpected_parsed_answer_count": 0,
+    }
 
 
 def _linked_item(

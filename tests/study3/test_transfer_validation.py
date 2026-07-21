@@ -39,7 +39,7 @@ def test_transfer_manifest_is_study3_scoped_and_verifiable(tmp_path):
         expected_git_commit="abc123",
     )
 
-    assert summary["experiment_id"] == "study3_multiselect_v1"
+    assert summary["experiment_id"] == "study3_multiselect_v2"
     assert summary["model_input_records"] == 1
     assert verified["status"] == "pass"
 
@@ -100,9 +100,9 @@ def test_run_validation_detects_gold_leakage_and_id_alignment(tmp_path):
 def _model_input():
     return {
         "item_id": "study3_g1_ms_test",
-        "experiment_id": "study3_multiselect_v1",
+        "experiment_id": "study3_multiselect_v2",
         "image_path": "files/p10/s1/a.jpg",
-        "prompt_template_id": "study3_multiselect_present_v1",
+        "prompt_template_id": "study3_multiselect_state_present_v2",
         "prompt": "synthetic",
     }
 
@@ -110,9 +110,10 @@ def _model_input():
 def _metadata():
     return {
         "item_id": "study3_g1_ms_test",
-        "experiment_id": "study3_multiselect_v1",
+        "experiment_id": "study3_multiselect_v2",
         "granularity": "G1_finding_existence",
-        "question_type": "anatomicalfinding_multiselect_v1",
+        "question_type": "anatomicalfinding_multiselect_v2",
+        "prompt_framing": "state",
         "query_relation": "present",
         "variant": "natural",
         "controlled_k": None,
