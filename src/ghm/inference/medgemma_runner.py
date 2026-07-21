@@ -166,10 +166,10 @@ def run_medgemma(
         from PIL import Image
         from transformers import (
             AutoModelForImageTextToText,
-            AutoModelForMultimodalLM,
             AutoProcessor,
+            Qwen3VLForConditionalGeneration,
         )
-    except ModuleNotFoundError as exc:
+    except (ImportError, ModuleNotFoundError) as exc:
         raise RuntimeError(
             "Multimodal inference requires torch, pillow, and transformers installed "
             "on the remote environment."
@@ -187,7 +187,7 @@ def run_medgemma(
     if device == "auto":
         load_kwargs["device_map"] = "auto"
     model_class = (
-        AutoModelForMultimodalLM
+        Qwen3VLForConditionalGeneration
         if model_name == "Qwen/Qwen3-VL-8B-Instruct"
         else AutoModelForImageTextToText
     )
