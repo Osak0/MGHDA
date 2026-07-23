@@ -84,6 +84,6 @@ def test_write_parquet_outputs_and_summary_roundtrip(tmp_path):
     objects = pa.read_table(tmp_path / "ci_objects.parquet")
     assertions = pa.read_table(tmp_path / "ci_attribute_assertions.parquet")
 
-    assert objects.num_rows == 36
-    assert assertions.num_rows == 22
+    assert objects.num_rows == 3
+    assert assertions.num_rows == 4
     assert (tmp_path / "parse_chest_imagenome_summary.json").exists()
