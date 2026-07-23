@@ -11,17 +11,16 @@ from ghm.data.parse_chest_imagenome import (
 )
 
 
-FIXTURE = Path(
-    "data/fixtures/0000d3be-591ae3b7-b03a7497-8319c02b-650bb4ab_SceneGraph.json"
-)
+FIXTURE_DIR = Path(__file__).parent / "fixtures"
+FIXTURE = FIXTURE_DIR / "synthetic_chest_imagenome_SceneGraph.json"
 
 
 def test_parse_fixture_object_and_assertion_counts():
     result = parse_scene_graph_file(FIXTURE)
 
     assert result.files_seen == 1
-    assert len(result.object_rows) == 36
-    assert len(result.assertion_rows) == 22
+    assert len(result.object_rows) == 3
+    assert len(result.assertion_rows) == 4
     assert result.warnings == {}
 
 
@@ -70,7 +69,7 @@ def test_modifier_cues_remain_phrase_aligned():
 
 
 def test_discover_scene_graphs_is_deterministic():
-    paths = discover_scene_graphs(Path("data/fixtures"))
+    paths = discover_scene_graphs(FIXTURE_DIR)
 
     assert paths == [FIXTURE]
 

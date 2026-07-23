@@ -1,0 +1,104 @@
+{
+  "image_id": "synthetic-image-001",
+  "patient_id": "synthetic-patient-001",
+  "study_id": "synthetic-study-001",
+  "objects": [
+    {
+      "object_id": "synthetic-image-001_right-lung",
+      "bbox_name": "right lung",
+      "name": "Synthetic right lung",
+      "synsets": [],
+      "x1": 10,
+      "y1": 20,
+      "x2": 80,
+      "y2": 180
+    },
+    {
+      "object_id": "synthetic-image-001_left-lung",
+      "bbox_name": "left lung",
+      "name": "Synthetic left lung",
+      "synsets": [],
+      "x1": 90,
+      "y1": 20,
+      "x2": 160,
+      "y2": 180
+    },
+    {
+      "object_id": "synthetic-image-001_cardiac-silhouette",
+      "bbox_name": "cardiac silhouette",
+      "name": "Synthetic cardiac silhouette",
+      "synsets": [],
+      "x1": 65,
+      "y1": 90,
+      "x2": 115,
+      "y2": 170
+    }
+  ],
+  "attributes": [
+    {
+      "right lung": true,
+      "bbox_name": "right lung",
+      "name": "Synthetic right lung",
+      "object_id": "synthetic-image-001_right-lung",
+      "attributes": [
+        ["anatomicalfinding|no|pneumothorax"]
+      ],
+      "attributes_ids": [["synthetic-assertion-001"]],
+      "phrases": ["Synthetic negative finding phrase."],
+      "phrase_IDs": ["synthetic-phrase-001"],
+      "sections": ["synthetic-section"],
+      "comparison_cues": [[]],
+      "temporal_cues": [[]],
+      "severity_cues": [[]],
+      "texture_cues": [[]]
+    },
+    {
+      "left lung": true,
+      "bbox_name": "left lung",
+      "name": "Synthetic left lung",
+      "object_id": "synthetic-image-001_left-lung",
+      "attributes": [
+        ["anatomicalfinding|no|pleural effusion"]
+      ],
+      "attributes_ids": [["synthetic-assertion-002"]],
+      "phrases": ["Second synthetic negative finding phrase."],
+      "phrase_IDs": ["synthetic-phrase-002"],
+      "sections": ["synthetic-section"],
+      "comparison_cues": [[]],
+      "temporal_cues": [[]],
+      "severity_cues": [[]],
+      "texture_cues": [[]]
+    },
+    {
+      "cardiac silhouette": true,
+      "bbox_name": "cardiac silhouette",
+      "name": "Synthetic cardiac silhouette",
+      "object_id": "synthetic-image-001_cardiac-silhouette",
+      "attributes": [
+        ["anatomicalfinding|yes|enlarged cardiac silhouette"],
+        ["anatomicalfinding|yes|enlarged cardiac silhouette"]
+      ],
+      "attributes_ids": [
+        ["synthetic-assertion-003"],
+        ["synthetic-assertion-004"]
+      ],
+      "phrases": [
+        "Synthetic mild finding with unchanged comparison.",
+        "Repeated synthetic mild finding with unchanged comparison."
+      ],
+      "phrase_IDs": ["synthetic-phrase-003", "synthetic-phrase-004"],
+      "sections": ["synthetic-section", "synthetic-section"],
+      "comparison_cues": [
+        ["comparison|yes|no change"],
+        ["comparison|yes|no change"]
+      ],
+      "temporal_cues": [[], []],
+      "severity_cues": [
+        ["severity|yes|mild"],
+        ["severity|yes|mild"]
+      ],
+      "texture_cues": [[], []]
+    }
+  ],
+  "relationships": []
+}
