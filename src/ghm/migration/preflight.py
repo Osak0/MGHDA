@@ -60,9 +60,9 @@ def collect_preflight(
             transformers is not None
             and hasattr(transformers, "AutoModelForImageTextToText")
         ),
-        "multimodal": bool(
+        "qwen3_vl": bool(
             transformers is not None
-            and hasattr(transformers, "AutoModelForMultimodalLM")
+            and hasattr(transformers, "Qwen3VLForConditionalGeneration")
         ),
     }
     for loader, supported in loader_support.items():

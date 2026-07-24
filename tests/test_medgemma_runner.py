@@ -149,6 +149,15 @@ def test_runner_requires_local_only_model_loading():
     assert '"local_files_only": True' in source
 
 
+def test_runner_uses_official_qwen3_vl_loader():
+    source = (Path(__file__).parents[1] / "src/ghm/inference/medgemma_runner.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Qwen3VLForConditionalGeneration" in source
+    assert "AutoModelForMultimodalLM" not in source
+
+
 def test_resume_rejects_another_model_or_prompt_template():
     config = {"seed": 42, "temperature": 0.0}
     previous = {
